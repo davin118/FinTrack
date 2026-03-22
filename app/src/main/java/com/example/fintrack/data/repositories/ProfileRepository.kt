@@ -95,6 +95,20 @@ class ProfileRepository(
         return userDao.getById(userId) != null
     }
 
+    suspend fun resetPassword(email: String, newPassword: String): Boolean {
+        val normalizedEmail = email.trim().lowercase()
+        if (normalizedEmail.isBlank() || newPassword.isBlank()) return false
+        val user = userDao.getByEmail(normalizedEmail) ?: return false
+        val securePassword = AuthCrypto.hashPassword(newPassword)
+        userDao.upsert(
+            user.copy(
+                passwordHash = securePassword.hash,
+                passwordSalt = securePassword.salt
+            )
+        )
+        return true
+    }
+
     private fun UserEntity.toFinanceUser(): FinanceUser {
         return FinanceUser(
             id = id,

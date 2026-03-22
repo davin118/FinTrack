@@ -31,6 +31,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import kotlin.math.ceil
 
 enum class TransactionType(val label: String) {
     INCOME("Ingreso"),
@@ -689,6 +690,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             authStatusMessage.value = "Ingresa correo y contraseña."
             return
         }
+        val now = System.currentTimeMillis()
+        val lockedUntil = authPrefs.getLong(lockoutKey(normalizedEmail), 0L)
+        if (lockedUntil > now) {
+            val remainingMinutes = ceil((lockedUntil - now).toDouble() / 60_000.0).toInt().coerceAtLeast(1)
+            authStatusMessage.value = "Cuenta bloqueada temporalmente. Intenta en $remainingMinutes min."
+            return
+        }
+
         viewModelScope.launch {
             authOperationRunning.value = true
             runCatching {
@@ -697,9 +706,25 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     password = password
                 )
                 if (user == null) {
-                    authStatusMessage.value = "Credenciales incorrectas."
+                    val attempts = authPrefs.getInt(failedAttemptsKey(normalizedEmail), 0) + 1
+                    if (attempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
+                        authPrefs.edit()
+                            .putInt(failedAttemptsKey(normalizedEmail), 0)
+                            .putLong(lockoutKey(normalizedEmail), System.currentTimeMillis() + LOGIN_LOCKOUT_MILLIS)
+                            .apply()
+                        authStatusMessage.value = "Demasiados intentos fallidos. Cuenta bloqueada por 15 min."
+                    } else {
+                        authPrefs.edit()
+                            .putInt(failedAttemptsKey(normalizedEmail), attempts)
+                            .apply()
+                        authStatusMessage.value = "Credenciales incorrectas. Intentos: $attempts/$MAX_FAILED_LOGIN_ATTEMPTS."
+                    }
                     return@runCatching
                 }
+                authPrefs.edit()
+                    .putInt(failedAttemptsKey(normalizedEmail), 0)
+                    .remove(lockoutKey(normalizedEmail))
+                    .apply()
                 saveSession(user.id)
                 hasAnyRegisteredUser.value = true
                 authStatusMessage.value = null
@@ -717,6 +742,36 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearAuthStatusMessage() {
         authStatusMessage.value = null
+    }
+
+    fun recoverPassword(email: String, newPassword: String) {
+        val normalizedEmail = email.trim().lowercase()
+        if (normalizedEmail.isBlank() || newPassword.isBlank()) {
+            authStatusMessage.value = "Completa correo y nueva contraseña."
+            return
+        }
+        if (newPassword.length < 6) {
+            authStatusMessage.value = "La nueva contraseña debe tener al menos 6 caracteres."
+            return
+        }
+        viewModelScope.launch {
+            authOperationRunning.value = true
+            runCatching {
+                val updated = profileRepository.resetPassword(normalizedEmail, newPassword)
+                if (!updated) {
+                    authStatusMessage.value = "No existe una cuenta con ese correo."
+                    return@runCatching
+                }
+                authPrefs.edit()
+                    .putInt(failedAttemptsKey(normalizedEmail), 0)
+                    .remove(lockoutKey(normalizedEmail))
+                    .apply()
+                authStatusMessage.value = "Contraseña actualizada. Ahora puedes iniciar sesión."
+            }.onFailure {
+                authStatusMessage.value = it.message ?: "No se pudo recuperar la contraseña."
+            }
+            authOperationRunning.value = false
+        }
     }
 
     fun transferBetweenAccounts(
@@ -1154,6 +1209,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         return UUID.randomUUID().toString().replace("-", "")
     }
 
+    private fun failedAttemptsKey(email: String): String = "failed_login_$email"
+
+    private fun lockoutKey(email: String): String = "lockout_until_$email"
+
     private fun maybeSendReminderNotification(reminders: List<SmartReminder>) {
         val highPriority = reminders.filter {
             it.severity == ReminderSeverity.WARNING || it.severity == ReminderSeverity.CRITICAL
@@ -1193,5 +1252,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         private const val KEY_REFRESH_TOKEN_EXPIRES_AT = "refresh_token_expires_at"
         private const val ACCESS_TOKEN_TTL_MILLIS = 15L * 60L * 1000L
         private const val REFRESH_TOKEN_TTL_MILLIS = 30L * 24L * 60L * 60L * 1000L
+        private const val MAX_FAILED_LOGIN_ATTEMPTS = 5
+        private const val LOGIN_LOCKOUT_MILLIS = 15L * 60L * 1000L
     }
 }

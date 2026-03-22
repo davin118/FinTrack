@@ -191,53 +191,53 @@ private val topBarColorByRoute = mapOf(
     "summary" to Color(0x66D7E8FF),
     "transactions" to Color(0x66CFE1FF),
     "budgets" to Color(0x66D9F0E5),
-    "tools" to Color(0x66E2DCF8)
+    "tools" to Color(0x66D7E8FF)
 )
 
 private val topBarDarkColorByRoute = mapOf(
     "summary" to Color(0xD9142233),
     "transactions" to Color(0xD9142230),
     "budgets" to Color(0xD9122D26),
-    "tools" to Color(0xD9201C33)
+    "tools" to Color(0xD9142233)
 )
 
 private val backgroundStartColorByRoute = mapOf(
     "summary" to Color(0xFFF5F7FF),
     "transactions" to Color(0xFFF2F8FF),
     "budgets" to Color(0xFFF4FBF8),
-    "tools" to Color(0xFFF8F5FF)
+    "tools" to Color(0xFFF5F7FF)
 )
 private val backgroundStartDarkColorByRoute = mapOf(
     "summary" to Color(0xFF0A1018),
     "transactions" to Color(0xFF0A111A),
     "budgets" to Color(0xFF0A1512),
-    "tools" to Color(0xFF120F1D)
+    "tools" to Color(0xFF0A1018)
 )
 
 private val backgroundMidColorByRoute = mapOf(
     "summary" to Color(0xFFE8F5FF),
     "transactions" to Color(0xFFE6F1FF),
     "budgets" to Color(0xFFE6F6EF),
-    "tools" to Color(0xFFEDE7FB)
+    "tools" to Color(0xFFE8F5FF)
 )
 private val backgroundMidDarkColorByRoute = mapOf(
     "summary" to Color(0xFF0E1B2A),
     "transactions" to Color(0xFF0F1B2B),
     "budgets" to Color(0xFF0D2720),
-    "tools" to Color(0xFF18142A)
+    "tools" to Color(0xFF0E1B2A)
 )
 
 private val backgroundEndColorByRoute = mapOf(
     "summary" to Color(0xFFF9F5FF),
     "transactions" to Color(0xFFF4F6FF),
     "budgets" to Color(0xFFF2FBF6),
-    "tools" to Color(0xFFFDF7FF)
+    "tools" to Color(0xFFF9F5FF)
 )
 private val backgroundEndDarkColorByRoute = mapOf(
     "summary" to Color(0xFF0D1623),
     "transactions" to Color(0xFF0D1622),
     "budgets" to Color(0xFF0E1E19),
-    "tools" to Color(0xFF151126)
+    "tools" to Color(0xFF0D1623)
 )
 
 class MainActivity : ComponentActivity() {
@@ -381,6 +381,7 @@ private fun FinanceApp(
             authRunning = uiState.authOperationRunning,
             onLogin = financeViewModel::loginUser,
             onRegister = financeViewModel::registerUser,
+            onRecoverPassword = financeViewModel::recoverPassword,
             onClearStatus = financeViewModel::clearAuthStatusMessage
         )
         return
@@ -1007,6 +1008,7 @@ private fun AuthScreen(
     authRunning: Boolean,
     onLogin: (email: String, password: String) -> Unit,
     onRegister: (name: String, email: String, password: String) -> Unit,
+    onRecoverPassword: (email: String, newPassword: String) -> Unit,
     onClearStatus: () -> Unit
 ) {
     var registerMode by rememberSaveable { mutableStateOf(!hasRegisteredUsers) }
@@ -1014,6 +1016,10 @@ private fun AuthScreen(
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
+    var showRecoverDialog by rememberSaveable { mutableStateOf(false) }
+    var recoverEmail by rememberSaveable { mutableStateOf("") }
+    var recoverPassword by rememberSaveable { mutableStateOf("") }
+    var recoverPasswordVisible by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(hasRegisteredUsers) {
         if (!hasRegisteredUsers) registerMode = true
@@ -1231,6 +1237,21 @@ private fun AuthScreen(
                     }
                 }
 
+                if (!registerMode && hasRegisteredUsers) {
+                    TextButton(
+                        onClick = {
+                            recoverEmail = email
+                            recoverPassword = ""
+                            recoverPasswordVisible = false
+                            showRecoverDialog = true
+                            onClearStatus()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Olvide mi contrasena")
+                    }
+                }
+
                 if (!hasRegisteredUsers) {
                     Text(
                         "Primera vez: crea tu cuenta para activar la app.",
@@ -1241,6 +1262,54 @@ private fun AuthScreen(
                 }
             }
         }
+    }
+
+    if (showRecoverDialog) {
+        AppPopupDialog(
+            onDismissRequest = { showRecoverDialog = false },
+            icon = { PopupHeaderIcon(Icons.Filled.Lock) },
+            title = { PopupTitle("Recuperar contraseña", "Define una nueva contraseña para tu cuenta") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PopupInputField(
+                        value = recoverEmail,
+                        onValueChange = { recoverEmail = it },
+                        label = "Correo"
+                    )
+                    PopupInputField(
+                        value = recoverPassword,
+                        onValueChange = { recoverPassword = it },
+                        label = "Nueva contrasena",
+                        visualTransformation = if (recoverPasswordVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        trailingIcon = {
+                            IconButton(onClick = { recoverPasswordVisible = !recoverPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (recoverPasswordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    contentDescription = if (recoverPasswordVisible) "Ocultar contrasena" else "Mostrar contrasena"
+                                )
+                            }
+                        }
+                    )
+                }
+            },
+            confirmButton = {
+                PopupConfirmButton(
+                    text = "Actualizar",
+                    onClick = {
+                        onRecoverPassword(recoverEmail, recoverPassword)
+                        showRecoverDialog = false
+                    },
+                    enabled = !authRunning
+                )
+            },
+            dismissButton = {
+                PopupDismissButton(onClick = { showRecoverDialog = false })
+            }
+        )
     }
 }
 
