@@ -26,7 +26,6 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -440,13 +439,20 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 val accountNameById = accounts.associate { it.id to it.name }
                 val accountBalances = accounts.map { account ->
                     val accountTx = transactions.filter { it.accountId == account.id }
-                    val accountIncome = accountTx.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
-                    val accountExpense = accountTx.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+                    val accountIncome = accountTx
+                        .filter { it.type == TransactionType.INCOME && !it.isTransfer }
+                        .sumOf { it.amount }
+                    val accountExpense = accountTx
+                        .filter { it.type == TransactionType.EXPENSE && !it.isTransfer }
+                        .sumOf { it.amount }
+                    val netWithTransfers = accountTx.sumOf { tx ->
+                        if (tx.type == TransactionType.INCOME) tx.amount else -tx.amount
+                    }
                     AccountBalance(
                         account = account,
                         income = accountIncome,
                         expense = accountExpense,
-                        balance = accountIncome - accountExpense
+                        balance = netWithTransfers
                     )
                 }
 
@@ -665,7 +671,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 val user = profileRepository.register(
                     name = normalizedName,
                     email = normalizedEmail,
-                    passwordHash = hashPassword(password)
+                    password = password
                 )
                 saveSession(user.id)
                 hasAnyRegisteredUser.value = true
@@ -688,7 +694,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             runCatching {
                 val user = profileRepository.login(
                     email = normalizedEmail,
-                    passwordHash = hashPassword(password)
+                    password = password
                 )
                 if (user == null) {
                     authStatusMessage.value = "Credenciales incorrectas."
@@ -1085,13 +1091,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         val safeNextTarget = targetDay.coerceAtMost(maxDayNext)
         val remainingCurrent = maxDayCurrent - today
         return remainingCurrent + safeNextTarget
-    }
-
-    private fun hashPassword(password: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(password.toByteArray(Charsets.UTF_8)).joinToString("") { byte ->
-            "%02x".format(byte)
-        }
     }
 
     private fun saveSession(userId: Long) {

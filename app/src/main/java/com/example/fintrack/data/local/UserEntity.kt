@@ -9,5 +9,6 @@ data class UserEntity(
     val name: String,
     val avatarUri: String? = null,
     val email: String = "",
-    val passwordHash: String = ""
+    val passwordHash: String = "",
+    val passwordSalt: String = ""
 )

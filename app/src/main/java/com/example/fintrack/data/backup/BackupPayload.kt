@@ -45,8 +45,6 @@ data class BackupPayload(
                     .put("id", user.id)
                     .put("name", user.name)
                     .put("avatarUri", user.avatarUri)
-                    .put("email", user.email)
-                    .put("passwordHash", user.passwordHash)
             )
         }
 
@@ -120,7 +118,7 @@ data class BackupPayload(
         }
 
         return JSONObject()
-            .put("schemaVersion", 9)
+            .put("schemaVersion", 10)
             .put("createdAtEpochMillis", createdAtEpochMillis)
             .put("users", userArray)
             .put("accounts", accountArray)
@@ -152,8 +150,9 @@ data class BackupPayload(
                             id = obj.optLong("id", 1L),
                             name = obj.optString("name", ""),
                             avatarUri = obj.optString("avatarUri").takeIf { it.isNotBlank() },
-                            email = obj.optString("email", "").trim().lowercase(),
-                            passwordHash = obj.optString("passwordHash", "")
+                            email = "",
+                            passwordHash = "",
+                            passwordSalt = ""
                         )
                     )
                 }

@@ -2,6 +2,7 @@ package com.example.fintrack.data.repositories
 
 import com.example.fintrack.data.local.UserDao
 import com.example.fintrack.data.local.UserEntity
+import com.example.fintrack.data.security.AuthCrypto
 import com.example.fintrack.ui.finance.FinanceUser
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -25,30 +26,52 @@ class ProfileRepository(
         )
     }
 
-    suspend fun login(email: String, passwordHash: String): FinanceUser? {
+    suspend fun login(email: String, password: String): FinanceUser? {
         val normalizedEmail = email.trim().lowercase()
-        if (normalizedEmail.isBlank() || passwordHash.isBlank()) return null
+        if (normalizedEmail.isBlank() || password.isBlank()) return null
         val user = userDao.getByEmail(normalizedEmail) ?: return null
-        if (user.passwordHash != passwordHash) return null
+        val verified = if (user.passwordSalt.isNotBlank()) {
+            AuthCrypto.verifyPassword(
+                password = password,
+                hashHex = user.passwordHash,
+                saltHex = user.passwordSalt
+            )
+        } else {
+            user.passwordHash == AuthCrypto.hashLegacySha256(password)
+        }
+        if (!verified) return null
+
+        if (user.passwordSalt.isBlank()) {
+            val upgraded = AuthCrypto.hashPassword(password)
+            userDao.upsert(
+                user.copy(
+                    passwordHash = upgraded.hash,
+                    passwordSalt = upgraded.salt
+                )
+            )
+        }
         return user.toFinanceUser()
     }
 
-    suspend fun register(name: String, email: String, passwordHash: String): FinanceUser {
+    suspend fun register(name: String, email: String, password: String): FinanceUser {
         val normalizedName = name.trim()
         val normalizedEmail = email.trim().lowercase()
         require(normalizedName.isNotEmpty()) { "Nombre invalido" }
         require(normalizedEmail.isNotEmpty()) { "Correo invalido" }
-        require(passwordHash.isNotEmpty()) { "Contrasena invalida" }
+        require(password.isNotEmpty()) { "Contrasena invalida" }
 
         val existingByEmail = userDao.getByEmail(normalizedEmail)
         require(existingByEmail == null) { "Este correo ya esta registrado" }
+
+        val securePassword = AuthCrypto.hashPassword(password)
 
         val legacyPrimary = userDao.getPrimary()
         val user = if (legacyPrimary != null && legacyPrimary.email.isBlank()) {
             legacyPrimary.copy(
                 name = normalizedName,
                 email = normalizedEmail,
-                passwordHash = passwordHash
+                passwordHash = securePassword.hash,
+                passwordSalt = securePassword.salt
             )
         } else {
             UserEntity(
@@ -56,7 +79,8 @@ class ProfileRepository(
                 name = normalizedName,
                 avatarUri = null,
                 email = normalizedEmail,
-                passwordHash = passwordHash
+                passwordHash = securePassword.hash,
+                passwordSalt = securePassword.salt
             )
         }
         userDao.upsert(user)
