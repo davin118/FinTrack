@@ -32,6 +32,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.ceil
+import kotlin.random.Random
 
 enum class TransactionType(val label: String) {
     INCOME("Ingreso"),
@@ -76,7 +77,8 @@ data class FinanceAccount(
 data class FinanceUser(
     val id: Long,
     val name: String,
-    val avatarUri: String?
+    val avatarUri: String?,
+    val email: String
 )
 
 data class FinanceSubscription(
@@ -651,6 +653,36 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun updateCurrentUserProfileComplete(
+        name: String,
+        avatarUri: String?,
+        email: String,
+        newPassword: String?
+    ) {
+        if (name.isBlank()) return
+        val userId = sessionUserId.value ?: return
+        viewModelScope.launch {
+            authOperationRunning.value = true
+            runCatching {
+                if (!newPassword.isNullOrBlank() && newPassword.length < 6) {
+                    authStatusMessage.value = "La nueva contraseña debe tener al menos 6 caracteres."
+                    return@runCatching
+                }
+                profileRepository.updateUserProfileComplete(
+                    userId = userId,
+                    name = name.trim(),
+                    avatarUri = avatarUri,
+                    email = email.trim(),
+                    newPassword = newPassword?.takeIf { it.isNotBlank() }
+                )
+                authStatusMessage.value = "Perfil actualizado correctamente."
+            }.onFailure {
+                authStatusMessage.value = it.message ?: "No se pudo actualizar perfil."
+            }
+            authOperationRunning.value = false
+        }
+    }
+
     fun registerUser(name: String, email: String, password: String) {
         val normalizedName = name.trim()
         val normalizedEmail = email.trim().lowercase()
@@ -744,16 +776,63 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         authStatusMessage.value = null
     }
 
-    fun recoverPassword(email: String, newPassword: String) {
+    fun sendRecoveryPin(email: String) {
         val normalizedEmail = email.trim().lowercase()
-        if (normalizedEmail.isBlank() || newPassword.isBlank()) {
-            authStatusMessage.value = "Completa correo y nueva contraseña."
+        if (normalizedEmail.isBlank() || !normalizedEmail.contains("@")) {
+            authStatusMessage.value = "Ingresa un correo valido."
+            return
+        }
+        viewModelScope.launch {
+            authOperationRunning.value = true
+            runCatching {
+                val exists = profileRepository.emailExists(normalizedEmail)
+                if (!exists) {
+                    authStatusMessage.value = "No existe una cuenta con ese correo."
+                    return@runCatching
+                }
+                val pin = Random.nextInt(100000, 999999).toString()
+                val expiresAt = System.currentTimeMillis() + PASSWORD_RESET_PIN_TTL_MILLIS
+                authPrefs.edit()
+                    .putString(recoveryPinKey(normalizedEmail), pin)
+                    .putLong(recoveryPinExpiryKey(normalizedEmail), expiresAt)
+                    .apply()
+
+                ReminderNotifier.notify(
+                    context = getApplication(),
+                    title = "PIN temporal de recuperación",
+                    message = "Tu PIN de Ortvyn es $pin. Vence en 10 minutos."
+                )
+                authStatusMessage.value = "PIN enviado por notificacion local."
+            }.onFailure {
+                authStatusMessage.value = it.message ?: "No se pudo enviar PIN."
+            }
+            authOperationRunning.value = false
+        }
+    }
+
+    fun recoverPasswordWithPin(email: String, pin: String, newPassword: String) {
+        val normalizedEmail = email.trim().lowercase()
+        val normalizedPin = pin.trim()
+        if (normalizedEmail.isBlank() || normalizedPin.isBlank() || newPassword.isBlank()) {
+            authStatusMessage.value = "Completa correo, PIN y nueva contraseña."
             return
         }
         if (newPassword.length < 6) {
             authStatusMessage.value = "La nueva contraseña debe tener al menos 6 caracteres."
             return
         }
+        val savedPin = authPrefs.getString(recoveryPinKey(normalizedEmail), null)
+        val expiresAt = authPrefs.getLong(recoveryPinExpiryKey(normalizedEmail), 0L)
+        val now = System.currentTimeMillis()
+        if (savedPin.isNullOrBlank() || expiresAt <= now) {
+            authStatusMessage.value = "PIN vencido. Solicita uno nuevo."
+            return
+        }
+        if (savedPin != normalizedPin) {
+            authStatusMessage.value = "PIN incorrecto."
+            return
+        }
+
         viewModelScope.launch {
             authOperationRunning.value = true
             runCatching {
@@ -763,6 +842,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     return@runCatching
                 }
                 authPrefs.edit()
+                    .remove(recoveryPinKey(normalizedEmail))
+                    .remove(recoveryPinExpiryKey(normalizedEmail))
                     .putInt(failedAttemptsKey(normalizedEmail), 0)
                     .remove(lockoutKey(normalizedEmail))
                     .apply()
@@ -1213,6 +1294,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     private fun lockoutKey(email: String): String = "lockout_until_$email"
 
+    private fun recoveryPinKey(email: String): String = "recovery_pin_$email"
+
+    private fun recoveryPinExpiryKey(email: String): String = "recovery_pin_expiry_$email"
+
     private fun maybeSendReminderNotification(reminders: List<SmartReminder>) {
         val highPriority = reminders.filter {
             it.severity == ReminderSeverity.WARNING || it.severity == ReminderSeverity.CRITICAL
@@ -1254,5 +1339,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         private const val REFRESH_TOKEN_TTL_MILLIS = 30L * 24L * 60L * 60L * 1000L
         private const val MAX_FAILED_LOGIN_ATTEMPTS = 5
         private const val LOGIN_LOCKOUT_MILLIS = 15L * 60L * 1000L
+        private const val PASSWORD_RESET_PIN_TTL_MILLIS = 10L * 60L * 1000L
     }
 }

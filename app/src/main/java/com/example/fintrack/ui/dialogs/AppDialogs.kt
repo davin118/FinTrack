@@ -41,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -192,6 +193,7 @@ fun PopupInputField(
     value: String,
     onValueChange: (String) -> Unit,
     label: String,
+    modifier: Modifier = Modifier,
     singleLine: Boolean = true,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     trailingIcon: (@Composable (() -> Unit))? = null
@@ -204,7 +206,7 @@ fun PopupInputField(
         singleLine = singleLine,
         visualTransformation = visualTransformation,
         trailingIcon = trailingIcon,
-        modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
         colors = OutlinedTextFieldDefaults.colors(
             focusedContainerColor = if (darkTheme) Color(0xFF1B2636) else Color(0xF7FFFFFF),
@@ -740,12 +742,16 @@ fun UserSetupDialog(
 @Composable
 fun EditProfileDialog(
     currentName: String,
+    currentEmail: String,
     currentAvatarUri: String?,
     onDismiss: () -> Unit,
-    onConfirm: (String, String?) -> Unit
+    onConfirm: (String, String?, String, String?) -> Unit
 ) {
     val context = LocalContext.current
     var name by remember(currentName) { mutableStateOf(currentName) }
+    var email by remember(currentEmail) { mutableStateOf(currentEmail) }
+    var newPassword by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
     var avatarUri by remember(currentAvatarUri) { mutableStateOf(currentAvatarUri) }
     val pickAvatarLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -763,7 +769,7 @@ fun EditProfileDialog(
     AppPopupDialog(
         onDismissRequest = onDismiss,
         icon = { PopupHeaderIcon(Icons.Filled.Edit) },
-        title = { PopupTitle("Editar perfil", "Actualiza tu nombre y foto") },
+        title = { PopupTitle("Editar perfil", "Actualiza nombre, correo, foto y contraseña") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -789,13 +795,36 @@ fun EditProfileDialog(
                     onValueChange = { name = it },
                     label = "Tu nombre"
                 )
+                PopupInputField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = "Correo"
+                )
+                PopupInputField(
+                    value = newPassword,
+                    onValueChange = { newPassword = it },
+                    label = "Nueva contrasena (opcional)",
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        TextButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Text(if (passwordVisible) "Ocultar" else "Ver")
+                        }
+                    }
+                )
             }
         },
         confirmButton = {
             PopupConfirmButton(
                 text = "Guardar",
                 onClick = {
-                    if (name.isNotBlank()) onConfirm(name.trim(), avatarUri)
+                    if (name.isNotBlank() && email.isNotBlank()) {
+                        onConfirm(
+                            name.trim(),
+                            avatarUri,
+                            email.trim(),
+                            newPassword.takeIf { it.isNotBlank() }
+                        )
+                    }
                 }
             )
         },

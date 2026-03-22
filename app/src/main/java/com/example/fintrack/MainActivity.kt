@@ -381,7 +381,8 @@ private fun FinanceApp(
             authRunning = uiState.authOperationRunning,
             onLogin = financeViewModel::loginUser,
             onRegister = financeViewModel::registerUser,
-            onRecoverPassword = financeViewModel::recoverPassword,
+            onSendRecoveryPin = financeViewModel::sendRecoveryPin,
+            onRecoverPasswordWithPin = financeViewModel::recoverPasswordWithPin,
             onClearStatus = financeViewModel::clearAuthStatusMessage
         )
         return
@@ -968,10 +969,16 @@ private fun FinanceApp(
     AnimatedDialogHost(visible = showEditProfileDialog) {
         EditProfileDialog(
             currentName = uiState.currentUser?.name.orEmpty(),
+            currentEmail = uiState.currentUser?.email.orEmpty(),
             currentAvatarUri = uiState.currentUser?.avatarUri,
             onDismiss = { showEditProfileDialog = false },
-            onConfirm = { name, avatarUri ->
-                financeViewModel.updateCurrentUserProfile(name, avatarUri)
+            onConfirm = { name, avatarUri, email, newPassword ->
+                financeViewModel.updateCurrentUserProfileComplete(
+                    name = name,
+                    avatarUri = avatarUri,
+                    email = email,
+                    newPassword = newPassword
+                )
                 showEditProfileDialog = false
             }
         )
@@ -1008,7 +1015,8 @@ private fun AuthScreen(
     authRunning: Boolean,
     onLogin: (email: String, password: String) -> Unit,
     onRegister: (name: String, email: String, password: String) -> Unit,
-    onRecoverPassword: (email: String, newPassword: String) -> Unit,
+    onSendRecoveryPin: (email: String) -> Unit,
+    onRecoverPasswordWithPin: (email: String, pin: String, newPassword: String) -> Unit,
     onClearStatus: () -> Unit
 ) {
     var registerMode by rememberSaveable { mutableStateOf(!hasRegisteredUsers) }
@@ -1018,6 +1026,7 @@ private fun AuthScreen(
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
     var showRecoverDialog by rememberSaveable { mutableStateOf(false) }
     var recoverEmail by rememberSaveable { mutableStateOf("") }
+    var recoverPin by rememberSaveable { mutableStateOf("") }
     var recoverPassword by rememberSaveable { mutableStateOf("") }
     var recoverPasswordVisible by rememberSaveable { mutableStateOf(false) }
 
@@ -1241,6 +1250,7 @@ private fun AuthScreen(
                     TextButton(
                         onClick = {
                             recoverEmail = email
+                            recoverPin = ""
                             recoverPassword = ""
                             recoverPasswordVisible = false
                             showRecoverDialog = true
@@ -1276,6 +1286,20 @@ private fun AuthScreen(
                         onValueChange = { recoverEmail = it },
                         label = "Correo"
                     )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PopupInputField(
+                            value = recoverPin,
+                            onValueChange = { recoverPin = it },
+                            label = "PIN",
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = { onSendRecoveryPin(recoverEmail) },
+                            enabled = !authRunning
+                        ) {
+                            Text("Enviar PIN")
+                        }
+                    }
                     PopupInputField(
                         value = recoverPassword,
                         onValueChange = { recoverPassword = it },
@@ -1298,9 +1322,9 @@ private fun AuthScreen(
             },
             confirmButton = {
                 PopupConfirmButton(
-                    text = "Actualizar",
+                    text = "Restablecer",
                     onClick = {
-                        onRecoverPassword(recoverEmail, recoverPassword)
+                        onRecoverPasswordWithPin(recoverEmail, recoverPin, recoverPassword)
                         showRecoverDialog = false
                     },
                     enabled = !authRunning

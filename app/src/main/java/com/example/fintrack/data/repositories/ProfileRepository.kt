@@ -18,12 +18,7 @@ class ProfileRepository(
         val normalized = name.trim()
         require(normalized.isNotEmpty()) { "Nombre de usuario invalido" }
         val existing = userDao.getById(userId) ?: error("Usuario no encontrado")
-        userDao.upsert(
-            existing.copy(
-                name = normalized,
-                avatarUri = avatarUri
-            )
-        )
+        userDao.upsert(existing.copy(name = normalized, avatarUri = avatarUri))
     }
 
     suspend fun login(email: String, password: String): FinanceUser? {
@@ -95,6 +90,45 @@ class ProfileRepository(
         return userDao.getById(userId) != null
     }
 
+    suspend fun updateUserProfileComplete(
+        userId: Long,
+        name: String,
+        avatarUri: String?,
+        email: String,
+        newPassword: String?
+    ) {
+        val normalizedName = name.trim()
+        val normalizedEmail = email.trim().lowercase()
+        require(normalizedName.isNotEmpty()) { "Nombre de usuario invalido" }
+        require(normalizedEmail.isNotEmpty() && normalizedEmail.contains("@")) { "Correo invalido" }
+
+        val existing = userDao.getById(userId) ?: error("Usuario no encontrado")
+        val other = userDao.getByEmail(normalizedEmail)
+        require(other == null || other.id == userId) { "Este correo ya esta en uso" }
+
+        val updated = if (!newPassword.isNullOrBlank()) {
+            val secure = AuthCrypto.hashPassword(newPassword)
+            existing.copy(
+                name = normalizedName,
+                avatarUri = avatarUri,
+                email = normalizedEmail,
+                passwordHash = secure.hash,
+                passwordSalt = secure.salt
+            )
+        } else {
+            existing.copy(
+                name = normalizedName,
+                avatarUri = avatarUri,
+                email = normalizedEmail
+            )
+        }
+        userDao.upsert(updated)
+    }
+
+    suspend fun emailExists(email: String): Boolean {
+        return userDao.getByEmail(email.trim().lowercase()) != null
+    }
+
     suspend fun resetPassword(email: String, newPassword: String): Boolean {
         val normalizedEmail = email.trim().lowercase()
         if (normalizedEmail.isBlank() || newPassword.isBlank()) return false
@@ -113,7 +147,8 @@ class ProfileRepository(
         return FinanceUser(
             id = id,
             name = name,
-            avatarUri = avatarUri
+            avatarUri = avatarUri,
+            email = email
         )
     }
 }
