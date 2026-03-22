@@ -4,6 +4,15 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+import java.util.Properties
+
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        file.inputStream().use { load(it) }
+    }
+}
+
 android {
     namespace = "com.example.fintrack"
     compileSdk {
@@ -20,6 +29,32 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField(
+            "String",
+            "SMTP_HOST",
+            "\"${localProperties.getProperty("SMTP_HOST", "")}\""
+        )
+        buildConfigField(
+            "int",
+            "SMTP_PORT",
+            localProperties.getProperty("SMTP_PORT", "587")
+        )
+        buildConfigField(
+            "String",
+            "SMTP_USERNAME",
+            "\"${localProperties.getProperty("SMTP_USERNAME", "")}\""
+        )
+        buildConfigField(
+            "String",
+            "SMTP_PASSWORD",
+            "\"${localProperties.getProperty("SMTP_PASSWORD", "")}\""
+        )
+        buildConfigField(
+            "String",
+            "SMTP_FROM_EMAIL",
+            "\"${localProperties.getProperty("SMTP_FROM_EMAIL", "")}\""
+        )
     }
 
     buildTypes {
@@ -37,6 +72,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -50,6 +86,8 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.mail.android)
+    implementation(libs.mail.activation)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)

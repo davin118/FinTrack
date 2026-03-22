@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.fintrack.data.backup.BackupCrypto
 import com.example.fintrack.data.backup.BackupPayload
 import com.example.fintrack.data.local.FinTrackDatabase
+import com.example.fintrack.data.security.SmtpPinSender
 import com.example.fintrack.data.repositories.AccountsRepository
 import com.example.fintrack.data.repositories.BackupRepository
 import com.example.fintrack.data.repositories.BudgetsRepository
@@ -797,14 +798,15 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     .putLong(recoveryPinExpiryKey(normalizedEmail), expiresAt)
                     .apply()
 
-                ReminderNotifier.notify(
-                    context = getApplication(),
-                    title = "PIN temporal de recuperación",
-                    message = "Tu PIN de Ortvyn es $pin. Vence en 10 minutos."
-                )
-                authStatusMessage.value = "PIN enviado por notificacion local."
+                withContext(Dispatchers.IO) {
+                    SmtpPinSender.sendPin(
+                        toEmail = normalizedEmail,
+                        pin = pin
+                    )
+                }
+                authStatusMessage.value = "PIN enviado a tu correo por SMTP."
             }.onFailure {
-                authStatusMessage.value = it.message ?: "No se pudo enviar PIN."
+                authStatusMessage.value = it.message ?: "No se pudo enviar PIN por SMTP."
             }
             authOperationRunning.value = false
         }

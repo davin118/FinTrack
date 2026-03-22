@@ -13,6 +13,7 @@ ksp = "2.2.10-2.0.2"
 navigationCompose = "2.8.0"
 splashscreen = "1.0.1"
 work = "2.10.1"
+mail = "1.6.7"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -37,6 +38,8 @@ androidx-room-runtime = { group = "androidx.room", name = "room-runtime", versio
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
+mail-android = { group = "com.sun.mail", name = "android-mail", version.ref = "mail" }
+mail-activation = { group = "com.sun.mail", name = "android-activation", version.ref = "mail" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
