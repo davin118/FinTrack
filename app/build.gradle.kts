@@ -32,28 +32,13 @@ android {
 
         buildConfigField(
             "String",
-            "SMTP_HOST",
-            "\"${localProperties.getProperty("SMTP_HOST", "")}\""
-        )
-        buildConfigField(
-            "int",
-            "SMTP_PORT",
-            localProperties.getProperty("SMTP_PORT", "587")
+            "RESEND_API_KEY",
+            "\"${localProperties.getProperty("RESEND_API_KEY", "")}\""
         )
         buildConfigField(
             "String",
-            "SMTP_USERNAME",
-            "\"${localProperties.getProperty("SMTP_USERNAME", "")}\""
-        )
-        buildConfigField(
-            "String",
-            "SMTP_PASSWORD",
-            "\"${localProperties.getProperty("SMTP_PASSWORD", "")}\""
-        )
-        buildConfigField(
-            "String",
-            "SMTP_FROM_EMAIL",
-            "\"${localProperties.getProperty("SMTP_FROM_EMAIL", "")}\""
+            "RESEND_FROM_EMAIL",
+            "\"${localProperties.getProperty("RESEND_FROM_EMAIL", "")}\""
         )
     }
 
@@ -86,8 +71,6 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.work.runtime.ktx)
-    implementation(libs.mail.android)
-    implementation(libs.mail.activation)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)

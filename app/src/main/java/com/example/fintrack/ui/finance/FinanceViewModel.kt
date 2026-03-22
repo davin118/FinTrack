@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.fintrack.data.backup.BackupCrypto
 import com.example.fintrack.data.backup.BackupPayload
 import com.example.fintrack.data.local.FinTrackDatabase
-import com.example.fintrack.data.security.SmtpPinSender
+import com.example.fintrack.data.security.ResendPinSender
 import com.example.fintrack.data.repositories.AccountsRepository
 import com.example.fintrack.data.repositories.BackupRepository
 import com.example.fintrack.data.repositories.BudgetsRepository
@@ -799,14 +799,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     .apply()
 
                 withContext(Dispatchers.IO) {
-                    SmtpPinSender.sendPin(
+                    ResendPinSender.sendPin(
                         toEmail = normalizedEmail,
                         pin = pin
                     )
                 }
-                authStatusMessage.value = "PIN enviado a tu correo por SMTP."
+                authStatusMessage.value = "PIN enviado a tu correo."
             }.onFailure {
-                authStatusMessage.value = it.message ?: "No se pudo enviar PIN por SMTP."
+                authStatusMessage.value = it.message ?: "No se pudo enviar PIN por Resend."
             }
             authOperationRunning.value = false
         }
