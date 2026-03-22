@@ -91,6 +91,10 @@ class ProfileRepository(
         return userDao.countRegisteredUsers() > 0
     }
 
+    suspend fun userExists(userId: Long): Boolean {
+        return userDao.getById(userId) != null
+    }
+
     private fun UserEntity.toFinanceUser(): FinanceUser {
         return FinanceUser(
             id = id,

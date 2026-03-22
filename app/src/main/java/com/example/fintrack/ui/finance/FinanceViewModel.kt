@@ -1116,10 +1116,16 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         sessionUserId.value = null
     }
 
-    private fun initializeSessionFromPrefs() {
+    private suspend fun initializeSessionFromPrefs() {
         val userId = authPrefs.getLong(KEY_SESSION_USER_ID, -1L).takeIf { it > 0L }
         if (userId == null) {
             sessionUserId.value = null
+            return
+        }
+
+        if (!profileRepository.userExists(userId)) {
+            clearSession()
+            authStatusMessage.value = "Tu sesion ya no es valida. Inicia sesion nuevamente."
             return
         }
 
