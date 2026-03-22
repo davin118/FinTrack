@@ -82,6 +82,7 @@ import com.example.fintrack.ui.theme.semanticColors
 import com.example.fintrack.ui.finance.CategoryExpenseShare
 import com.example.fintrack.ui.finance.BudgetProgress
 import com.example.fintrack.ui.finance.ExpenseTrendPoint
+import com.example.fintrack.ui.finance.AccountKindBalance
 import com.example.fintrack.ui.finance.FinanceTransaction
 import com.example.fintrack.ui.finance.FinanceUiState
 import com.example.fintrack.ui.finance.TransactionCategory
@@ -133,6 +134,12 @@ fun SummaryScreen(
                 balanceText = formatCurrency(uiState.balance),
                 incomeText = formatCurrency(uiState.income),
                 expenseText = formatCurrency(uiState.expense)
+            )
+        }
+        item {
+            AccountKindBalancesCard(
+                balances = uiState.accountKindBalances,
+                formatCurrency = ::formatCurrency
             )
         }
         item { Spacer(modifier = Modifier.height(8.dp)) }
@@ -216,6 +223,38 @@ fun SummaryScreen(
                     onEdit = { onEdit(transaction) },
                     onDelete = { onDelete(transaction) }
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountKindBalancesCard(
+    balances: List<AccountKindBalance>,
+    formatCurrency: (Double) -> String
+) {
+    FinanceCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("Saldo por tipo", style = MaterialTheme.typography.titleMedium)
+            balances.forEach { entry ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(entry.kind.label, color = MaterialTheme.semanticColors.textSecondary)
+                    Text(
+                        text = formatCurrency(entry.balance),
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (entry.balance >= 0.0) {
+                            MaterialTheme.semanticColors.success
+                        } else {
+                            MaterialTheme.semanticColors.danger
+                        }
+                    )
+                }
             }
         }
     }

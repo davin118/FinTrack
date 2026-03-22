@@ -56,6 +56,7 @@ data class BackupPayload(
                 JSONObject()
                     .put("id", account.id)
                     .put("name", account.name)
+                    .put("kind", account.kind)
             )
         }
 
@@ -119,7 +120,7 @@ data class BackupPayload(
         }
 
         return JSONObject()
-            .put("schemaVersion", 8)
+            .put("schemaVersion", 9)
             .put("createdAtEpochMillis", createdAtEpochMillis)
             .put("users", userArray)
             .put("accounts", accountArray)
@@ -164,7 +165,8 @@ data class BackupPayload(
                     add(
                         AccountEntity(
                             id = obj.optLong("id"),
-                            name = obj.optString("name", "Principal")
+                            name = obj.optString("name", "Principal"),
+                            kind = obj.optString("kind", "BANK")
                         )
                     )
                 }

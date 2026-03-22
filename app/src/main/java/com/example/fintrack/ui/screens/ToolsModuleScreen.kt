@@ -426,7 +426,14 @@ fun ToolsModuleScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(account.name, fontWeight = FontWeight.SemiBold)
+                            Column {
+                                Text(account.name, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    account.kind.label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.semanticColors.textSecondary
+                                )
+                            }
                             Text(
                                 "ID ${account.id}",
                                 style = MaterialTheme.typography.labelMedium,

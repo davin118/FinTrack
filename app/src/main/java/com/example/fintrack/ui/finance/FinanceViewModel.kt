@@ -46,6 +46,16 @@ enum class TransactionCategory(val label: String) {
     OTHER("Otros")
 }
 
+enum class AccountKind(val label: String) {
+    CASH("Efectivo"),
+    BANK("Bancaria"),
+    DIGITAL("Digital");
+
+    companion object {
+        fun fromDb(value: String): AccountKind = runCatching { valueOf(value) }.getOrDefault(BANK)
+    }
+}
+
 data class FinanceTransaction(
     val id: Long,
     val description: String,
@@ -59,7 +69,8 @@ data class FinanceTransaction(
 
 data class FinanceAccount(
     val id: Long,
-    val name: String
+    val name: String,
+    val kind: AccountKind
 )
 
 data class FinanceUser(
@@ -94,6 +105,13 @@ data class FinanceDebt(
 
 data class AccountBalance(
     val account: FinanceAccount,
+    val income: Double,
+    val expense: Double,
+    val balance: Double
+)
+
+data class AccountKindBalance(
+    val kind: AccountKind,
     val income: Double,
     val expense: Double,
     val balance: Double
@@ -162,6 +180,7 @@ data class FinanceUiState(
     val accounts: List<FinanceAccount> = emptyList(),
     val accountBalances: List<AccountBalance> = emptyList(),
     val accountNameById: Map<Long, String> = emptyMap(),
+    val accountKindBalances: List<AccountKindBalance> = emptyList(),
     val subscriptions: List<FinanceSubscription> = emptyList(),
     val activeSubscriptionsMonthlyTotal: Double = 0.0,
     val savingGoals: List<FinanceSavingGoal> = emptyList(),
@@ -431,10 +450,21 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     )
                 }
 
-                    FinanceUiState(
-                        accounts = accounts,
-                        accountBalances = accountBalances,
-                        accountNameById = accountNameById,
+                val accountKindBalances = AccountKind.entries.map { kind ->
+                    val kindAccounts = accountBalances.filter { it.account.kind == kind }
+                    AccountKindBalance(
+                        kind = kind,
+                        income = kindAccounts.sumOf { it.income },
+                        expense = kindAccounts.sumOf { it.expense },
+                        balance = kindAccounts.sumOf { it.balance }
+                    )
+                }
+
+                FinanceUiState(
+                    accounts = accounts,
+                    accountBalances = accountBalances,
+                    accountNameById = accountNameById,
+                    accountKindBalances = accountKindBalances,
                         transactions = filtered,
                         summaryTransactions = accountFiltered,
                         monthFilters = monthFilters,
@@ -599,10 +629,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun addAccount(name: String) {
+    fun addAccount(name: String, kind: AccountKind) {
         if (name.isBlank()) return
         viewModelScope.launch {
-            runCatching { accountsRepository.addAccount(name.trim()) }
+            runCatching { accountsRepository.addAccount(name.trim(), kind) }
         }
     }
 

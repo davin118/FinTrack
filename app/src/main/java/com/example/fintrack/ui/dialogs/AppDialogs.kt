@@ -53,6 +53,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.example.fintrack.ui.components.ProfileAvatar
 import com.example.fintrack.ui.finance.FinanceAccount
+import com.example.fintrack.ui.finance.AccountKind
 import com.example.fintrack.ui.finance.FinanceDebt
 import com.example.fintrack.ui.finance.FinanceSavingGoal
 import com.example.fintrack.ui.finance.RecurringTargetType
@@ -251,22 +252,39 @@ fun BackupPasswordDialog(
 @Composable
 fun CreateAccountDialog(
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
+    onConfirm: (String, AccountKind) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
+    var kind by remember { mutableStateOf(AccountKind.BANK) }
     AppPopupDialog(
         onDismissRequest = onDismiss,
         icon = { PopupHeaderIcon(Icons.Filled.AccountBalanceWallet) },
-        title = { PopupTitle("Nueva cuenta", "Separa tu dinero por objetivos") },
+        title = { PopupTitle("Nueva cuenta", "Tipo: efectivo, bancaria o digital") },
         text = {
-            PopupInputField(
-                value = name,
-                onValueChange = { name = it },
-                label = "Nombre de cuenta"
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                PopupInputField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = "Nombre de cuenta"
+                )
+                Text("Tipo de cuenta")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(AccountKind.entries) { option ->
+                        FilterChip(
+                            selected = kind == option,
+                            onClick = { kind = option },
+                            label = { Text(option.label) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+            }
         },
         confirmButton = {
-            PopupConfirmButton(text = "Guardar", onClick = { onConfirm(name) })
+            PopupConfirmButton(text = "Guardar", onClick = { onConfirm(name, kind) })
         },
         dismissButton = {
             PopupDismissButton(onClick = onDismiss)

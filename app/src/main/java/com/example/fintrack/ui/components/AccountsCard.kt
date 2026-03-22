@@ -49,6 +49,11 @@ fun AccountsCard(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
+                                text = account.account.kind.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.semanticColors.textSecondary
+                            )
+                            Text(
                                 text = "Ing ${formatCurrency(account.income)} · Gas ${formatCurrency(account.expense)}",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.semanticColors.textSecondary,

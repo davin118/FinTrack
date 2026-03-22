@@ -858,8 +858,8 @@ private fun FinanceApp(
     AnimatedDialogHost(visible = showCreateAccountDialog) {
         CreateAccountDialog(
             onDismiss = { showCreateAccountDialog = false },
-            onConfirm = { name ->
-                financeViewModel.addAccount(name)
+            onConfirm = { name, kind ->
+                financeViewModel.addAccount(name, kind)
                 showCreateAccountDialog = false
             }
         )
@@ -1019,6 +1019,16 @@ private fun AuthScreen(
         if (!hasRegisteredUsers) registerMode = true
     }
 
+    val authHeroGradient = Brush.linearGradient(
+        colors = listOf(
+            Color(0xFF2E5B88),
+            Color(0xFF1E7AA8),
+            Color(0xFF15A5A1)
+        ),
+        start = Offset.Zero,
+        end = Offset(800f, 380f)
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1028,32 +1038,61 @@ private fun AuthScreen(
     ) {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(28.dp),
+            shape = RoundedCornerShape(32.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
             ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 14.dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 18.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Row(
+                Card(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent)
                 ) {
-                    BrandLogoMark(size = 54.dp)
-                    Column {
-                        BrandWordmarkText(text = "Ortvyn", fontSize = 28.sp)
-                        Text(
-                            "Protege y controla tu dinero",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(authHeroGradient)
+                            .padding(horizontal = 14.dp, vertical = 16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                        ) {
+                            BrandLogoMark(size = 54.dp)
+                            Column {
+                                BrandWordmarkText(text = "Ortvyn", fontSize = 30.sp)
+                                Text(
+                                    "Acceso seguro a tus finanzas",
+                                    color = Color.White.copy(alpha = 0.95f),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
                     }
                 }
+
+                Text(
+                    text = if (registerMode) "Crea tu cuenta" else "Bienvenido de nuevo",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = if (registerMode) {
+                        "Registra tu usuario para empezar a gestionar tu dinero."
+                    } else {
+                        "Inicia sesion para entrar a tu panel financiero."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
                 if (hasRegisteredUsers) {
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -1149,11 +1188,17 @@ private fun AuthScreen(
                 )
 
                 if (!statusMessage.isNullOrBlank()) {
-                    Text(
-                        statusMessage,
-                        color = Color(0xFFD44A4A),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFE9E9))
+                    ) {
+                        Text(
+                            statusMessage,
+                            color = Color(0xFFB3261E),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                        )
+                    }
                 }
 
                 Button(
@@ -1190,7 +1235,8 @@ private fun AuthScreen(
                     Text(
                         "Primera vez: crea tu cuenta para activar la app.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.labelMedium
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
