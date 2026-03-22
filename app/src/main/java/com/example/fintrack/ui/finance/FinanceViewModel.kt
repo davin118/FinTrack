@@ -31,6 +31,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 enum class TransactionType(val label: String) {
     INCOME("Ingreso"),
@@ -259,7 +260,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val backupOperationRunning = MutableStateFlow(false)
     private val recurringStatusMessage = MutableStateFlow<String?>(null)
     private val authPrefs = application.getSharedPreferences("auth_prefs", Application.MODE_PRIVATE)
-    private val sessionUserId = MutableStateFlow(authPrefs.getLong(KEY_SESSION_USER_ID, -1L).takeIf { it > 0L })
+    private val sessionUserId = MutableStateFlow<Long?>(null)
     private val authReady = MutableStateFlow(false)
     private val hasAnyRegisteredUser = MutableStateFlow(false)
     private val authStatusMessage = MutableStateFlow<String?>(null)
@@ -274,6 +275,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             runCatching { transactionsRepository.seedSampleDataIfEmpty() }
         }
         viewModelScope.launch {
+            initializeSessionFromPrefs()
             hasAnyRegisteredUser.value = runCatching {
                 profileRepository.hasRegisteredUsers()
             }.getOrDefault(false)
@@ -1063,13 +1065,58 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun saveSession(userId: Long) {
-        authPrefs.edit().putLong(KEY_SESSION_USER_ID, userId).apply()
+        val now = System.currentTimeMillis()
+        authPrefs.edit()
+            .putLong(KEY_SESSION_USER_ID, userId)
+            .putString(KEY_ACCESS_TOKEN, generateToken())
+            .putLong(KEY_ACCESS_TOKEN_EXPIRES_AT, now + ACCESS_TOKEN_TTL_MILLIS)
+            .putString(KEY_REFRESH_TOKEN, generateToken())
+            .putLong(KEY_REFRESH_TOKEN_EXPIRES_AT, now + REFRESH_TOKEN_TTL_MILLIS)
+            .apply()
         sessionUserId.value = userId
     }
 
     private fun clearSession() {
-        authPrefs.edit().remove(KEY_SESSION_USER_ID).apply()
+        authPrefs.edit()
+            .remove(KEY_SESSION_USER_ID)
+            .remove(KEY_ACCESS_TOKEN)
+            .remove(KEY_ACCESS_TOKEN_EXPIRES_AT)
+            .remove(KEY_REFRESH_TOKEN)
+            .remove(KEY_REFRESH_TOKEN_EXPIRES_AT)
+            .apply()
         sessionUserId.value = null
+    }
+
+    private fun initializeSessionFromPrefs() {
+        val userId = authPrefs.getLong(KEY_SESSION_USER_ID, -1L).takeIf { it > 0L }
+        if (userId == null) {
+            sessionUserId.value = null
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        val refreshToken = authPrefs.getString(KEY_REFRESH_TOKEN, null)
+        val refreshExpiresAt = authPrefs.getLong(KEY_REFRESH_TOKEN_EXPIRES_AT, 0L)
+        if (refreshToken.isNullOrBlank() || refreshExpiresAt <= now) {
+            clearSession()
+            authStatusMessage.value = "Tu sesion vencio. Inicia sesion nuevamente."
+            return
+        }
+
+        val accessToken = authPrefs.getString(KEY_ACCESS_TOKEN, null)
+        val accessExpiresAt = authPrefs.getLong(KEY_ACCESS_TOKEN_EXPIRES_AT, 0L)
+        if (accessToken.isNullOrBlank() || accessExpiresAt <= now) {
+            authPrefs.edit()
+                .putString(KEY_ACCESS_TOKEN, generateToken())
+                .putLong(KEY_ACCESS_TOKEN_EXPIRES_AT, now + ACCESS_TOKEN_TTL_MILLIS)
+                .apply()
+        }
+
+        sessionUserId.value = userId
+    }
+
+    private fun generateToken(): String {
+        return UUID.randomUUID().toString().replace("-", "")
     }
 
     private fun maybeSendReminderNotification(reminders: List<SmartReminder>) {
@@ -1105,5 +1152,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     companion object {
         private const val KEY_SESSION_USER_ID = "session_user_id"
+        private const val KEY_ACCESS_TOKEN = "access_token"
+        private const val KEY_ACCESS_TOKEN_EXPIRES_AT = "access_token_expires_at"
+        private const val KEY_REFRESH_TOKEN = "refresh_token"
+        private const val KEY_REFRESH_TOKEN_EXPIRES_AT = "refresh_token_expires_at"
+        private const val ACCESS_TOKEN_TTL_MILLIS = 15L * 60L * 1000L
+        private const val REFRESH_TOKEN_TTL_MILLIS = 30L * 24L * 60L * 60L * 1000L
     }
 }
