@@ -86,6 +86,7 @@ fun ToolsModuleScreen(
     onThemeModeChange: (AppThemeMode) -> Unit,
     onCreateBackup: () -> Unit,
     onRestoreBackup: () -> Unit,
+    onSendResendTestEmail: () -> Unit,
     onEditProfile: () -> Unit,
     onCreateSubscription: () -> Unit,
     onSetSubscriptionActive: (Long, Boolean) -> Unit,
@@ -466,6 +467,13 @@ fun ToolsModuleScreen(
                         text = "Restaurar",
                         icon = Icons.Filled.Sync,
                         onClick = onRestoreBackup,
+                        primary = false,
+                        enabled = !uiState.backupOperationRunning
+                    )
+                    IconTextButton(
+                        text = "Probar correo",
+                        icon = Icons.Filled.RocketLaunch,
+                        onClick = onSendResendTestEmail,
                         primary = false,
                         enabled = !uiState.backupOperationRunning
                     )

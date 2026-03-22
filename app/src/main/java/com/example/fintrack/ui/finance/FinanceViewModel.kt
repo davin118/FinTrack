@@ -857,6 +857,26 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun sendResendTestEmail() {
+        val email = uiState.value.currentUser?.email?.trim().orEmpty().lowercase()
+        if (email.isBlank() || !email.contains("@")) {
+            backupStatusMessage.value = "Configura un correo valido en tu perfil para probar Resend."
+            return
+        }
+        viewModelScope.launch {
+            backupOperationRunning.value = true
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    ResendPinSender.sendTestEmail(email)
+                }
+                backupStatusMessage.value = "Correo de prueba enviado a $email."
+            }.onFailure {
+                backupStatusMessage.value = it.message ?: "No se pudo enviar correo de prueba."
+            }
+            backupOperationRunning.value = false
+        }
+    }
+
     fun transferBetweenAccounts(
         fromAccountId: Long,
         toAccountId: Long,

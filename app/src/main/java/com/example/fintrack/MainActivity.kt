@@ -723,6 +723,7 @@ private fun FinanceApp(
                         onThemeModeChange = onThemeModeChange,
                         onCreateBackup = { showCreateBackupDialog = true },
                         onRestoreBackup = { showRestoreBackupDialog = true },
+                        onSendResendTestEmail = financeViewModel::sendResendTestEmail,
                         onEditProfile = { showEditProfileDialog = true },
                         onCreateSubscription = { showCreateSubscriptionDialog = true },
                         onSetSubscriptionActive = financeViewModel::setSubscriptionActive,
