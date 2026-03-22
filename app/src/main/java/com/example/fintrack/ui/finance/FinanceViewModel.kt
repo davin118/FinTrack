@@ -16,13 +16,17 @@ import com.example.fintrack.data.repositories.SavingGoalsRepository
 import com.example.fintrack.data.repositories.SubscriptionsRepository
 import com.example.fintrack.data.repositories.TransactionsRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -148,7 +152,12 @@ data class FinanceRecurringPlan(
 
 data class FinanceUiState(
     val currentUser: FinanceUser? = null,
-    val shouldPromptUserCreation: Boolean = true,
+    val shouldPromptUserCreation: Boolean = false,
+    val isAuthenticated: Boolean = false,
+    val authReady: Boolean = false,
+    val hasAnyRegisteredUser: Boolean = false,
+    val authStatusMessage: String? = null,
+    val authOperationRunning: Boolean = false,
     val accounts: List<FinanceAccount> = emptyList(),
     val accountBalances: List<AccountBalance> = emptyList(),
     val accountNameById: Map<Long, String> = emptyMap(),
@@ -204,6 +213,15 @@ private data class FilterTuple(
     val category: TransactionCategory?
 )
 
+private data class AuthUiInputs(
+    val ready: Boolean,
+    val hasUsers: Boolean,
+    val message: String?,
+    val sessionId: Long?,
+    val running: Boolean
+)
+
+@OptIn(ExperimentalCoroutinesApi::class)
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
 
     private val database = FinTrackDatabase.getInstance(application)
@@ -240,20 +258,35 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val backupStatusMessage = MutableStateFlow<String?>(null)
     private val backupOperationRunning = MutableStateFlow(false)
     private val recurringStatusMessage = MutableStateFlow<String?>(null)
+    private val authPrefs = application.getSharedPreferences("auth_prefs", Application.MODE_PRIVATE)
+    private val sessionUserId = MutableStateFlow(authPrefs.getLong(KEY_SESSION_USER_ID, -1L).takeIf { it > 0L })
+    private val authReady = MutableStateFlow(false)
+    private val hasAnyRegisteredUser = MutableStateFlow(false)
+    private val authStatusMessage = MutableStateFlow<String?>(null)
+    private val authOperationRunning = MutableStateFlow(false)
 
     private val _uiState = MutableStateFlow(FinanceUiState())
     val uiState: StateFlow<FinanceUiState> = _uiState.asStateFlow()
     private val reminderPrefs = application.getSharedPreferences("smart_reminder_prefs", Application.MODE_PRIVATE)
 
-        init {
+    init {
         viewModelScope.launch {
-            transactionsRepository.seedSampleDataIfEmpty()
+            runCatching { transactionsRepository.seedSampleDataIfEmpty() }
         }
         viewModelScope.launch {
-            applyRecurringPlansIfNeeded(force = false, manual = false)
+            hasAnyRegisteredUser.value = runCatching {
+                profileRepository.hasRegisteredUsers()
+            }.getOrDefault(false)
+            authReady.value = true
+        }
+        viewModelScope.launch {
+            runCatching { applyRecurringPlansIfNeeded(force = false, manual = false) }
         }
 
         viewModelScope.launch {
+            val currentUserFlow = sessionUserId.flatMapLatest { userId ->
+                if (userId == null) flowOf(null) else profileRepository.observeUser(userId)
+            }
             val filtersFlow = combine(
                 selectedMonthFilter,
                 selectedAccountFilter,
@@ -275,36 +308,37 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 Triple(query, backupStatus, backupRunning)
             }
 
-            combine(
-                accountsRepository.observeAccounts(),
-                transactionsRepository.observeTransactions(),
-                filtersFlow,
-                backupFlow
-            ) { accounts, transactions, filters, backup ->
-                FilterInputs(
-                    accounts = accounts,
-                    transactions = transactions,
-                    monthFilter = filters.month,
-                    accountFilter = filters.accountId,
-                    typeFilter = filters.type,
-                    categoryFilter = filters.category,
-                    query = backup.first,
-                    backupStatus = backup.second,
-                    backupRunning = backup.third
-                )
-            }.combine(budgetsRepository.observeBudgets()) { inputs, budgets ->
-                val accounts = inputs.accounts
-                val transactions = inputs.transactions
-                val monthFilter = inputs.monthFilter
-                val accountFilter = inputs.accountFilter
-                val typeFilter = inputs.typeFilter
-                val categoryFilter = inputs.categoryFilter
-                val query = inputs.query
+            try {
+                combine(
+                    accountsRepository.observeAccounts(),
+                    transactionsRepository.observeTransactions(),
+                    filtersFlow,
+                    backupFlow
+                ) { accounts, transactions, filters, backup ->
+                    FilterInputs(
+                        accounts = accounts,
+                        transactions = transactions,
+                        monthFilter = filters.month,
+                        accountFilter = filters.accountId,
+                        typeFilter = filters.type,
+                        categoryFilter = filters.category,
+                        query = backup.first,
+                        backupStatus = backup.second,
+                        backupRunning = backup.third
+                    )
+                }.combine(budgetsRepository.observeBudgets()) { inputs, budgets ->
+                    val accounts = inputs.accounts
+                    val transactions = inputs.transactions
+                    val monthFilter = inputs.monthFilter
+                    val accountFilter = inputs.accountFilter
+                    val typeFilter = inputs.typeFilter
+                    val categoryFilter = inputs.categoryFilter
+                    val query = inputs.query
 
-                val monthFilters = transactions
-                    .map { toMonthKey(it.dateEpochMillis) }
-                    .distinct()
-                    .sortedDescending()
+                    val monthFilters = transactions
+                        .map { toMonthKey(it.dateEpochMillis) }
+                        .distinct()
+                        .sortedDescending()
 
                 val monthFiltered = transactions.filter { transaction ->
                     monthFilter == null || toMonthKey(transaction.dateEpochMillis) == monthFilter
@@ -395,88 +429,117 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     )
                 }
 
-                FinanceUiState(
-                    accounts = accounts,
-                    accountBalances = accountBalances,
-                    accountNameById = accountNameById,
-                    transactions = filtered,
-                    summaryTransactions = accountFiltered,
-                    monthFilters = monthFilters,
-                    selectedMonthFilter = monthFilter,
-                    selectedAccountFilter = accountFilter,
-                    selectedTypeFilter = typeFilter,
-                    selectedCategoryFilter = categoryFilter,
-                    searchQuery = query,
-                    income = income,
-                    expense = expense,
-                    balance = income - expense,
-                    budgetMonthKey = budgetMonthKey,
-                    budgetProgress = budgetProgress,
-                    expenseShares = expenseShares,
-                    totalBudgetLimit = totalBudgetLimit,
-                    totalBudgetSpent = totalBudgetSpent,
-                    weeklyExpenseTrend = weeklyExpenseTrend,
-                    monthlyExpenseTrend = monthlyExpenseTrend,
-                    backupStatusMessage = inputs.backupStatus,
-                    backupOperationRunning = inputs.backupRunning
-                )
-            }.combine(profileRepository.observeUser()) { nextState, user ->
-                nextState.copy(
-                    currentUser = user,
-                    shouldPromptUserCreation = user == null || user.name.isBlank()
-                )
-            }.combine(subscriptionsRepository.observeSubscriptions()) { stateWithUser, subscriptions ->
-                val reminders = buildSmartReminders(
-                    budgetProgress = stateWithUser.budgetProgress,
-                    subscriptions = subscriptions
-                )
-                stateWithUser.copy(
-                    subscriptions = subscriptions,
-                    activeSubscriptionsMonthlyTotal = subscriptions
-                        .filter { it.isActive }
-                        .sumOf { it.amount },
-                    reminders = reminders
-                )
-            }.combine(savingGoalsRepository.observeSavingGoals()) { stateWithReminders, goals ->
-                val activeGoals = goals.filter { it.isActive }
-                stateWithReminders.copy(
-                    savingGoals = goals,
-                    activeSavingGoalsTargetTotal = activeGoals.sumOf { it.targetAmount },
-                    activeSavingGoalsSavedTotal = activeGoals.sumOf { it.savedAmount }
-                )
-            }.combine(debtsRepository.observeDebts()) { stateWithGoals, debts ->
-                val activeDebts = debts.filter { it.isActive }
-                stateWithGoals.copy(
-                    debts = debts,
-                    activeDebtsTotalAmount = activeDebts.sumOf { it.totalAmount },
-                    activeDebtsPendingAmount = activeDebts.sumOf { (it.totalAmount - it.paidAmount).coerceAtLeast(0.0) }
-                )
-            }.combine(recurringPlansRepository.observeRecurringPlans()) { stateWithDebts, plans ->
-                val goalNames = stateWithDebts.savingGoals.associate { it.id to it.name }
-                val debtNames = stateWithDebts.debts.associate { it.id to it.name }
-                val mappedPlans = plans.mapNotNull { plan ->
-                    val type = RecurringTargetType.fromDb(plan.targetType) ?: return@mapNotNull null
-                    val targetName = when (type) {
-                        RecurringTargetType.SAVING_GOAL -> goalNames[plan.targetId]
-                        RecurringTargetType.DEBT -> debtNames[plan.targetId]
-                    } ?: "Objetivo eliminado"
-                    FinanceRecurringPlan(
-                        id = plan.id,
-                        targetType = type,
-                        targetId = plan.targetId,
-                        targetName = targetName,
-                        amount = plan.amount,
-                        dayOfMonth = plan.dayOfMonth,
-                        isActive = plan.isActive,
-                        lastAppliedMonth = plan.lastAppliedMonth
+                    FinanceUiState(
+                        accounts = accounts,
+                        accountBalances = accountBalances,
+                        accountNameById = accountNameById,
+                        transactions = filtered,
+                        summaryTransactions = accountFiltered,
+                        monthFilters = monthFilters,
+                        selectedMonthFilter = monthFilter,
+                        selectedAccountFilter = accountFilter,
+                        selectedTypeFilter = typeFilter,
+                        selectedCategoryFilter = categoryFilter,
+                        searchQuery = query,
+                        income = income,
+                        expense = expense,
+                        balance = income - expense,
+                        budgetMonthKey = budgetMonthKey,
+                        budgetProgress = budgetProgress,
+                        expenseShares = expenseShares,
+                        totalBudgetLimit = totalBudgetLimit,
+                        totalBudgetSpent = totalBudgetSpent,
+                        weeklyExpenseTrend = weeklyExpenseTrend,
+                        monthlyExpenseTrend = monthlyExpenseTrend,
+                        backupStatusMessage = inputs.backupStatus,
+                        backupOperationRunning = inputs.backupRunning
                     )
+                }.combine(currentUserFlow) { nextState, user ->
+                    nextState.copy(
+                        currentUser = user,
+                        shouldPromptUserCreation = false
+                    )
+                }.combine(subscriptionsRepository.observeSubscriptions()) { stateWithUser, subscriptions ->
+                    val reminders = buildSmartReminders(
+                        budgetProgress = stateWithUser.budgetProgress,
+                        subscriptions = subscriptions
+                    )
+                    stateWithUser.copy(
+                        subscriptions = subscriptions,
+                        activeSubscriptionsMonthlyTotal = subscriptions
+                            .filter { it.isActive }
+                            .sumOf { it.amount },
+                        reminders = reminders
+                    )
+                }.combine(savingGoalsRepository.observeSavingGoals()) { stateWithReminders, goals ->
+                    val activeGoals = goals.filter { it.isActive }
+                    stateWithReminders.copy(
+                        savingGoals = goals,
+                        activeSavingGoalsTargetTotal = activeGoals.sumOf { it.targetAmount },
+                        activeSavingGoalsSavedTotal = activeGoals.sumOf { it.savedAmount }
+                    )
+                }.combine(debtsRepository.observeDebts()) { stateWithGoals, debts ->
+                    val activeDebts = debts.filter { it.isActive }
+                    stateWithGoals.copy(
+                        debts = debts,
+                        activeDebtsTotalAmount = activeDebts.sumOf { it.totalAmount },
+                        activeDebtsPendingAmount = activeDebts.sumOf { (it.totalAmount - it.paidAmount).coerceAtLeast(0.0) }
+                    )
+                }.combine(recurringPlansRepository.observeRecurringPlans()) { stateWithDebts, plans ->
+                    val goalNames = stateWithDebts.savingGoals.associate { it.id to it.name }
+                    val debtNames = stateWithDebts.debts.associate { it.id to it.name }
+                    val mappedPlans = plans.mapNotNull { plan ->
+                        val type = RecurringTargetType.fromDb(plan.targetType) ?: return@mapNotNull null
+                        val targetName = when (type) {
+                            RecurringTargetType.SAVING_GOAL -> goalNames[plan.targetId]
+                            RecurringTargetType.DEBT -> debtNames[plan.targetId]
+                        } ?: "Objetivo eliminado"
+                        FinanceRecurringPlan(
+                            id = plan.id,
+                            targetType = type,
+                            targetId = plan.targetId,
+                            targetName = targetName,
+                            amount = plan.amount,
+                            dayOfMonth = plan.dayOfMonth,
+                            isActive = plan.isActive,
+                            lastAppliedMonth = plan.lastAppliedMonth
+                        )
+                    }
+                    stateWithDebts.copy(recurringPlans = mappedPlans)
+                }.combine(recurringStatusMessage) { stateWithPlans, recurringStatus ->
+                    stateWithPlans.copy(recurringStatusMessage = recurringStatus)
+                }.combine(
+                    combine(authReady, hasAnyRegisteredUser, authStatusMessage, sessionUserId, authOperationRunning) { ready, hasUsers, authMessage, sessionId, running ->
+                        AuthUiInputs(
+                            ready = ready,
+                            hasUsers = hasUsers,
+                            message = authMessage,
+                            sessionId = sessionId,
+                            running = running
+                        )
+                    }
+                ) { stateWithRecurring, authInputs ->
+                    val authenticated = authInputs.sessionId != null
+                    stateWithRecurring.copy(
+                        recurringStatusMessage = stateWithRecurring.recurringStatusMessage,
+                        authReady = authInputs.ready,
+                        hasAnyRegisteredUser = authInputs.hasUsers,
+                        authStatusMessage = authInputs.message,
+                        authOperationRunning = authInputs.running,
+                        isAuthenticated = authenticated
+                    )
+                }.collect { finalState: FinanceUiState ->
+                    _uiState.value = finalState
+                    maybeSendReminderNotification(finalState.reminders)
                 }
-                stateWithDebts.copy(recurringPlans = mappedPlans)
-            }.combine(recurringStatusMessage) { stateWithPlans, recurringStatus ->
-                stateWithPlans.copy(recurringStatusMessage = recurringStatus)
-            }.collect { finalState: FinanceUiState ->
-                _uiState.value = finalState
-                maybeSendReminderNotification(finalState.reminders)
+            } catch (_: Throwable) {
+                authReady.value = true
+                _uiState.value = _uiState.value.copy(
+                    authReady = true,
+                    hasAnyRegisteredUser = false,
+                    isAuthenticated = false,
+                    authStatusMessage = "Error al iniciar datos. Intenta abrir de nuevo."
+                )
             }
         }
     }
@@ -541,11 +604,81 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun createOrUpdateUser(name: String, avatarUri: String?) {
+    fun updateCurrentUserProfile(name: String, avatarUri: String?) {
         if (name.isBlank()) return
+        val userId = sessionUserId.value ?: return
         viewModelScope.launch {
-            runCatching { profileRepository.saveUser(name.trim(), avatarUri) }
+            runCatching { profileRepository.updateUserProfile(userId, name.trim(), avatarUri) }
         }
+    }
+
+    fun registerUser(name: String, email: String, password: String) {
+        val normalizedName = name.trim()
+        val normalizedEmail = email.trim().lowercase()
+        if (normalizedName.isBlank() || normalizedEmail.isBlank() || password.isBlank()) {
+            authStatusMessage.value = "Completa nombre, correo y contraseña."
+            return
+        }
+        if (!normalizedEmail.contains("@")) {
+            authStatusMessage.value = "Correo invalido."
+            return
+        }
+        if (password.length < 6) {
+            authStatusMessage.value = "La contraseña debe tener al menos 6 caracteres."
+            return
+        }
+        viewModelScope.launch {
+            authOperationRunning.value = true
+            runCatching {
+                val user = profileRepository.register(
+                    name = normalizedName,
+                    email = normalizedEmail,
+                    passwordHash = hashPassword(password)
+                )
+                saveSession(user.id)
+                hasAnyRegisteredUser.value = true
+                authStatusMessage.value = null
+            }.onFailure {
+                authStatusMessage.value = it.message ?: "No se pudo registrar."
+            }
+            authOperationRunning.value = false
+        }
+    }
+
+    fun loginUser(email: String, password: String) {
+        val normalizedEmail = email.trim().lowercase()
+        if (normalizedEmail.isBlank() || password.isBlank()) {
+            authStatusMessage.value = "Ingresa correo y contraseña."
+            return
+        }
+        viewModelScope.launch {
+            authOperationRunning.value = true
+            runCatching {
+                val user = profileRepository.login(
+                    email = normalizedEmail,
+                    passwordHash = hashPassword(password)
+                )
+                if (user == null) {
+                    authStatusMessage.value = "Credenciales incorrectas."
+                    return@runCatching
+                }
+                saveSession(user.id)
+                hasAnyRegisteredUser.value = true
+                authStatusMessage.value = null
+            }.onFailure {
+                authStatusMessage.value = it.message ?: "No se pudo iniciar sesion."
+            }
+            authOperationRunning.value = false
+        }
+    }
+
+    fun logoutUser() {
+        clearSession()
+        authStatusMessage.value = null
+    }
+
+    fun clearAuthStatusMessage() {
+        authStatusMessage.value = null
     }
 
     fun transferBetweenAccounts(
@@ -922,6 +1055,23 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         return remainingCurrent + safeNextTarget
     }
 
+    private fun hashPassword(password: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        return digest.digest(password.toByteArray(Charsets.UTF_8)).joinToString("") { byte ->
+            "%02x".format(byte)
+        }
+    }
+
+    private fun saveSession(userId: Long) {
+        authPrefs.edit().putLong(KEY_SESSION_USER_ID, userId).apply()
+        sessionUserId.value = userId
+    }
+
+    private fun clearSession() {
+        authPrefs.edit().remove(KEY_SESSION_USER_ID).apply()
+        sessionUserId.value = null
+    }
+
     private fun maybeSendReminderNotification(reminders: List<SmartReminder>) {
         val highPriority = reminders.filter {
             it.severity == ReminderSeverity.WARNING || it.severity == ReminderSeverity.CRITICAL
@@ -951,5 +1101,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             .putString("last_signature", signature)
             .putLong("last_time", now)
             .apply()
+    }
+
+    companion object {
+        private const val KEY_SESSION_USER_ID = "session_user_id"
     }
 }

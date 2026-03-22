@@ -49,6 +49,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -99,6 +101,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -108,6 +111,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Analytics
@@ -116,13 +121,20 @@ import androidx.compose.material.icons.filled.Brightness4
 import androidx.compose.material.icons.filled.Brightness7
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsBrightness
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Wallet
 import androidx.compose.material.icons.filled.Check
 import com.example.fintrack.ui.finance.FinanceTransaction
 import com.example.fintrack.ui.finance.FinanceUiState
 import com.example.fintrack.ui.finance.FinanceViewModel
+import com.example.fintrack.ui.finance.SmartReminderWorker
 import com.example.fintrack.ui.finance.TransactionCategory
 import com.example.fintrack.ui.finance.TransactionType
 import com.example.fintrack.ui.components.BottomBarItemModel
@@ -144,7 +156,6 @@ import com.example.fintrack.ui.dialogs.PopupHeaderIcon
 import com.example.fintrack.ui.dialogs.PopupInputField
 import com.example.fintrack.ui.dialogs.PopupTitle
 import com.example.fintrack.ui.dialogs.TransferDialog
-import com.example.fintrack.ui.dialogs.UserSetupDialog
 import com.example.fintrack.ui.screens.BudgetsScreen
 import com.example.fintrack.ui.screens.SummaryScreen
 import com.example.fintrack.ui.screens.TransactionsScreen
@@ -157,7 +168,7 @@ import kotlinx.coroutines.delay
 private val bottomDestinations = listOf(
     BottomBarItemModel(route = "summary", label = "Resumen", icon = Icons.Filled.Wallet),
     BottomBarItemModel(route = "transactions", label = "Movimientos", icon = Icons.AutoMirrored.Filled.ReceiptLong),
-    BottomBarItemModel(route = "budgets", label = "Presupuestos", icon = Icons.Filled.Analytics),
+    BottomBarItemModel(route = "budgets", label = "Presupuestos", icon = Icons.Filled.Savings),
     BottomBarItemModel(route = "tools", label = "Herramientas", icon = Icons.Filled.Settings)
 )
 
@@ -184,10 +195,10 @@ private val topBarColorByRoute = mapOf(
 )
 
 private val topBarDarkColorByRoute = mapOf(
-    "summary" to Color(0xCC1B2D44),
-    "transactions" to Color(0xCC1A2940),
-    "budgets" to Color(0xCC18352D),
-    "tools" to Color(0xCC2A2442)
+    "summary" to Color(0xD9142233),
+    "transactions" to Color(0xD9142230),
+    "budgets" to Color(0xD9122D26),
+    "tools" to Color(0xD9201C33)
 )
 
 private val backgroundStartColorByRoute = mapOf(
@@ -197,10 +208,10 @@ private val backgroundStartColorByRoute = mapOf(
     "tools" to Color(0xFFF8F5FF)
 )
 private val backgroundStartDarkColorByRoute = mapOf(
-    "summary" to Color(0xFF0E1520),
-    "transactions" to Color(0xFF0F1624),
-    "budgets" to Color(0xFF0E1A17),
-    "tools" to Color(0xFF161220)
+    "summary" to Color(0xFF0A1018),
+    "transactions" to Color(0xFF0A111A),
+    "budgets" to Color(0xFF0A1512),
+    "tools" to Color(0xFF120F1D)
 )
 
 private val backgroundMidColorByRoute = mapOf(
@@ -210,10 +221,10 @@ private val backgroundMidColorByRoute = mapOf(
     "tools" to Color(0xFFEDE7FB)
 )
 private val backgroundMidDarkColorByRoute = mapOf(
-    "summary" to Color(0xFF142234),
-    "transactions" to Color(0xFF132033),
-    "budgets" to Color(0xFF113128),
-    "tools" to Color(0xFF1F1A33)
+    "summary" to Color(0xFF0E1B2A),
+    "transactions" to Color(0xFF0F1B2B),
+    "budgets" to Color(0xFF0D2720),
+    "tools" to Color(0xFF18142A)
 )
 
 private val backgroundEndColorByRoute = mapOf(
@@ -223,10 +234,10 @@ private val backgroundEndColorByRoute = mapOf(
     "tools" to Color(0xFFFDF7FF)
 )
 private val backgroundEndDarkColorByRoute = mapOf(
-    "summary" to Color(0xFF121A28),
-    "transactions" to Color(0xFF121927),
-    "budgets" to Color(0xFF12231D),
-    "tools" to Color(0xFF1A1630)
+    "summary" to Color(0xFF0D1623),
+    "transactions" to Color(0xFF0D1622),
+    "budgets" to Color(0xFF0E1E19),
+    "tools" to Color(0xFF151126)
 )
 
 class MainActivity : ComponentActivity() {
@@ -290,9 +301,12 @@ private fun FinanceApp(
         }
     }
 
+    LaunchedEffect(Unit) {
+        runCatching { SmartReminderWorker.schedule(context) }
+    }
+
     var isLoading by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
-        delay(500)
         isLoading = false
     }
 
@@ -355,6 +369,23 @@ private fun FinanceApp(
             snackbarHostState.showSnackbar(next)
         }
     }
+
+    if (!uiState.authReady) {
+        LoadingScreen()
+        return
+    }
+    if (!uiState.isAuthenticated) {
+        AuthScreen(
+            hasRegisteredUsers = uiState.hasAnyRegisteredUser,
+            statusMessage = uiState.authStatusMessage,
+            authRunning = uiState.authOperationRunning,
+            onLogin = financeViewModel::loginUser,
+            onRegister = financeViewModel::registerUser,
+            onClearStatus = financeViewModel::clearAuthStatusMessage
+        )
+        return
+    }
+
     var topBarLogoPulse by remember { mutableStateOf(false) }
     LaunchedEffect(currentRoute) {
         if (currentRoute != null) {
@@ -387,12 +418,9 @@ private fun FinanceApp(
     var showCreateDebtDialog by remember { mutableStateOf(false) }
     var selectedDebtIdForPayment by remember { mutableStateOf<Long?>(null) }
     var showCreateRecurringPlanDialog by remember { mutableStateOf(false) }
-    var showUserSetupDialog by remember { mutableStateOf(false) }
     var showEditProfileDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(uiState.shouldPromptUserCreation) {
-        showUserSetupDialog = uiState.shouldPromptUserCreation
-    }
+    var showRemindersSheet by remember { mutableStateOf(false) }
+    var showLogoutConfirmDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -402,9 +430,25 @@ private fun FinanceApp(
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = topBarContainerColor,
-                    titleContentColor = Color(0xFF1E2A3D)
+                    titleContentColor = if (darkTheme) Color(0xFFE3EBF7) else Color(0xFF1E2A3D)
                 ),
                 actions = {
+                    IconButton(
+                        onClick = { showRemindersSheet = true }
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                if (uiState.reminders.isNotEmpty()) {
+                                    Badge()
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Notifications,
+                                contentDescription = "Recordatorios"
+                            )
+                        }
+                    }
                     val (themeIcon, themeLabel) = when (themeMode) {
                         AppThemeMode.SYSTEM -> Icons.Filled.SettingsBrightness to "Tema sistema"
                         AppThemeMode.LIGHT -> Icons.Filled.Brightness7 to "Tema claro"
@@ -423,6 +467,14 @@ private fun FinanceApp(
                         Icon(
                             imageVector = themeIcon,
                             contentDescription = themeLabel
+                        )
+                    }
+                    IconButton(
+                        onClick = { showLogoutConfirmDialog = true }
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Logout,
+                            contentDescription = "Cerrar sesion"
                         )
                     }
                 },
@@ -451,7 +503,11 @@ private fun FinanceApp(
                             }
                             Text(
                                 topBarSubtitle,
-                                color = if (currentRoute == "summary") Color(0xFF143A5B) else Color(0xFF5F6B7A),
+                                color = if (darkTheme) {
+                                    if (currentRoute == "summary") Color(0xFFB9D5F2) else Color(0xFFAABCD2)
+                                } else {
+                                    if (currentRoute == "summary") Color(0xFF143A5B) else Color(0xFF5F6B7A)
+                                },
                                 fontWeight = if (currentRoute == "summary") FontWeight.SemiBold else FontWeight.Medium,
                                 fontSize = if (currentRoute == "summary") 15.sp else 13.sp,
                                 letterSpacing = if (currentRoute == "summary") 0.25.sp else 0.sp
@@ -687,6 +743,42 @@ private fun FinanceApp(
         }
     }
 
+    if (showRemindersSheet) {
+        androidx.compose.material3.ModalBottomSheet(
+            onDismissRequest = { showRemindersSheet = false }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Notificaciones", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                if (uiState.reminders.isEmpty()) {
+                    Text("No hay recordatorios por ahora.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    uiState.reminders.forEach { reminder ->
+                        val tone = when (reminder.severity) {
+                            com.example.fintrack.ui.finance.ReminderSeverity.INFO -> MaterialTheme.colorScheme.primary
+                            com.example.fintrack.ui.finance.ReminderSeverity.WARNING -> Color(0xFFC08A00)
+                            com.example.fintrack.ui.finance.ReminderSeverity.CRITICAL -> Color(0xFFE25151)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                        ) {
+                            Canvas(modifier = Modifier.size(8.dp)) {
+                                drawCircle(color = tone)
+                            }
+                            Text(reminder.message)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     AnimatedDialogHost(visible = showFormDialog) {
         TransactionFormDialog(
             initialTransaction = formTarget,
@@ -878,18 +970,231 @@ private fun FinanceApp(
             currentAvatarUri = uiState.currentUser?.avatarUri,
             onDismiss = { showEditProfileDialog = false },
             onConfirm = { name, avatarUri ->
-                financeViewModel.createOrUpdateUser(name, avatarUri)
+                financeViewModel.updateCurrentUserProfile(name, avatarUri)
                 showEditProfileDialog = false
             }
         )
     }
 
-    AnimatedDialogHost(visible = showUserSetupDialog) {
-        UserSetupDialog(
-            onConfirm = { name, avatarUri ->
-                financeViewModel.createOrUpdateUser(name, avatarUri)
+    AnimatedDialogHost(visible = showLogoutConfirmDialog) {
+        AppPopupDialog(
+            onDismissRequest = { showLogoutConfirmDialog = false },
+            icon = { PopupHeaderIcon(Icons.AutoMirrored.Filled.Logout) },
+            title = { PopupTitle("Cerrar sesion", "Confirma si deseas salir de tu cuenta") },
+            text = {
+                Text("Se cerrara tu sesion actual en este dispositivo.")
+            },
+            confirmButton = {
+                PopupConfirmButton(
+                    text = "Cerrar sesion",
+                    onClick = {
+                        financeViewModel.logoutUser()
+                        showLogoutConfirmDialog = false
+                    }
+                )
+            },
+            dismissButton = {
+                PopupDismissButton(onClick = { showLogoutConfirmDialog = false })
             }
         )
+    }
+}
+
+@Composable
+private fun AuthScreen(
+    hasRegisteredUsers: Boolean,
+    statusMessage: String?,
+    authRunning: Boolean,
+    onLogin: (email: String, password: String) -> Unit,
+    onRegister: (name: String, email: String, password: String) -> Unit,
+    onClearStatus: () -> Unit
+) {
+    var registerMode by rememberSaveable { mutableStateOf(!hasRegisteredUsers) }
+    var name by rememberSaveable { mutableStateOf("") }
+    var email by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var passwordVisible by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(hasRegisteredUsers) {
+        if (!hasRegisteredUsers) registerMode = true
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(backgroundGradient)
+            .padding(horizontal = 20.dp, vertical = 24.dp),
+        contentAlignment = androidx.compose.ui.Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 14.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    BrandLogoMark(size = 54.dp)
+                    Column {
+                        BrandWordmarkText(text = "Ortvyn", fontSize = 28.sp)
+                        Text(
+                            "Protege y controla tu dinero",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                if (hasRegisteredUsers) {
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                            selected = !registerMode,
+                            colors = SegmentedButtonDefaults.colors(
+                                activeContainerColor = MaterialTheme.colorScheme.primary,
+                                activeContentColor = Color.White,
+                                inactiveContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                inactiveContentColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            onClick = {
+                                registerMode = false
+                                onClearStatus()
+                            }
+                        ) {
+                            Text(
+                                "Iniciar",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 15.sp
+                            )
+                        }
+                        SegmentedButton(
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                            selected = registerMode,
+                            colors = SegmentedButtonDefaults.colors(
+                                activeContainerColor = MaterialTheme.colorScheme.primary,
+                                activeContentColor = Color.White,
+                                inactiveContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                inactiveContentColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            onClick = {
+                                registerMode = true
+                                onClearStatus()
+                            }
+                        ) {
+                            Text(
+                                "Registrar",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 15.sp
+                            )
+                        }
+                    }
+                }
+
+                if (registerMode) {
+                    PopupInputField(
+                        value = name,
+                        onValueChange = {
+                            name = it
+                            onClearStatus()
+                        },
+                        label = "Nombre"
+                    )
+                }
+                PopupInputField(
+                    value = email,
+                    onValueChange = {
+                        email = it
+                        onClearStatus()
+                    },
+                    label = "Correo"
+                )
+                PopupInputField(
+                    value = password,
+                    onValueChange = {
+                        password = it
+                        onClearStatus()
+                    },
+                    label = "Contrasena",
+                    visualTransformation = if (passwordVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) {
+                                    Icons.Filled.VisibilityOff
+                                } else {
+                                    Icons.Filled.Visibility
+                                },
+                                contentDescription = if (passwordVisible) {
+                                    "Ocultar contrasena"
+                                } else {
+                                    "Mostrar contrasena"
+                                }
+                            )
+                        }
+                    }
+                )
+
+                if (!statusMessage.isNullOrBlank()) {
+                    Text(
+                        statusMessage,
+                        color = Color(0xFFD44A4A),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        if (registerMode) {
+                            onRegister(name, email, password)
+                        } else {
+                            onLogin(email, password)
+                        }
+                    },
+                    enabled = !authRunning,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    if (authRunning) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Procesando...")
+                    } else {
+                        Icon(
+                            imageVector = if (registerMode) Icons.Filled.PersonAdd else Icons.Filled.Lock,
+                            contentDescription = null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (registerMode) "Crear cuenta" else "Entrar")
+                    }
+                }
+
+                if (!hasRegisteredUsers) {
+                    Text(
+                        "Primera vez: crea tu cuenta para activar la app.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -943,10 +1248,22 @@ private fun BrandLogoMark(size: Dp = 40.dp) {
 
 @Composable
 private fun LoadingScreen() {
+    val darkTheme = isSystemInDarkTheme()
+    val loadingBackground = if (darkTheme) {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xFF0A1018),
+                Color(0xFF0F1B2A),
+                Color(0xFF141327)
+            )
+        )
+    } else {
+        backgroundGradient
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundGradient),
+            .background(loadingBackground),
         contentAlignment = androidx.compose.ui.Alignment.Center
     ) {
         Column(
@@ -957,7 +1274,7 @@ private fun LoadingScreen() {
             BrandWordmarkText(text = "Ortvyn", fontSize = 38.sp)
             Text(
                 text = "Cargando tu panel financiero...",
-                color = Color(0xFF5F6B7A)
+                color = if (isSystemInDarkTheme()) Color(0xFFAABCD2) else Color(0xFF5F6B7A)
             )
             CircularProgressIndicator(
                 color = AppFintechTeal,

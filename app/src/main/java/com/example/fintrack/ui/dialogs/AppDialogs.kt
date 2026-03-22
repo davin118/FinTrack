@@ -192,22 +192,28 @@ fun PopupInputField(
     onValueChange: (String) -> Unit,
     label: String,
     singleLine: Boolean = true,
-    visualTransformation: VisualTransformation = VisualTransformation.None
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    trailingIcon: (@Composable (() -> Unit))? = null
 ) {
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label) },
         singleLine = singleLine,
         visualTransformation = visualTransformation,
+        trailingIcon = trailingIcon,
         modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = Color(0xF7FFFFFF),
-            unfocusedContainerColor = Color(0xEEFFFFFF),
+            focusedContainerColor = if (darkTheme) Color(0xFF1B2636) else Color(0xF7FFFFFF),
+            unfocusedContainerColor = if (darkTheme) Color(0xFF151F2D) else Color(0xEEFFFFFF),
             focusedBorderColor = MaterialTheme.colorScheme.primary,
             unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
-            focusedLabelColor = MaterialTheme.colorScheme.primary
+            focusedLabelColor = MaterialTheme.colorScheme.primary,
+            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
         )
     )
 }

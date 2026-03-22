@@ -26,7 +26,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 data class BottomBarItemModel(
     val route: String,
@@ -94,7 +96,10 @@ fun OrvynBottomBar(
                         label = {
                             Text(
                                 destination.label,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontSize = 11.sp
                             )
                         },
                         icon = {

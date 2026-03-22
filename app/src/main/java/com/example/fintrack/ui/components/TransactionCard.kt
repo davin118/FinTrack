@@ -13,17 +13,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.DirectionsBus
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Fastfood
 import androidx.compose.material.icons.filled.HomeRepairService
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +38,7 @@ import com.example.fintrack.ui.finance.TransactionCategory
 import com.example.fintrack.ui.finance.TransactionType
 import com.example.fintrack.ui.theme.semanticColors
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionCard(
     transaction: FinanceTransaction,
@@ -109,32 +109,51 @@ fun TransactionCard(
                 IconButton(onClick = { menuOpen = true }) {
                     Icon(Icons.Filled.MoreVert, contentDescription = "Opciones de transaccion")
                 }
-                DropdownMenu(
-                    expanded = menuOpen,
-                    onDismissRequest = { menuOpen = false }
+            }
+        }
+    }
+
+    if (menuOpen) {
+        ModalBottomSheet(onDismissRequest = { menuOpen = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = transaction.description,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = detailText,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.semanticColors.textSecondary
+                )
+                TextButton(
+                    onClick = {
+                        menuOpen = false
+                        onEdit()
+                    },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("Editar") },
-                        onClick = {
-                            menuOpen = false
-                            onEdit()
-                        },
-                        leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Eliminar", color = MaterialTheme.semanticColors.danger) },
-                        onClick = {
-                            menuOpen = false
-                            onDelete()
-                        },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Filled.Delete,
-                                contentDescription = null,
-                                tint = MaterialTheme.semanticColors.danger
-                            )
-                        }
-                    )
+                    Text("Editar")
+                }
+                TextButton(
+                    onClick = {
+                        menuOpen = false
+                        onDelete()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Eliminar", color = MaterialTheme.semanticColors.danger)
+                }
+                TextButton(
+                    onClick = { menuOpen = false },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Cancelar")
                 }
             }
         }

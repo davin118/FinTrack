@@ -26,12 +26,12 @@ val LightSemanticColors = SemanticColors(
 )
 
 val DarkSemanticColors = SemanticColors(
-    cardSurface = Color(0xFF1A2333),
-    textSecondary = Color(0xFFB5C3D6),
-    info = Color(0xFF7FBCE2),
-    warning = Color(0xFFF4D37E),
-    danger = Color(0xFFFF8F84),
-    success = Color(0xFF66D6BE)
+    cardSurface = Color(0xFF172233),
+    textSecondary = Color(0xFFAABCD2),
+    info = Color(0xFF79B7E3),
+    warning = Color(0xFFF0C96A),
+    danger = Color(0xFFFF8A83),
+    success = Color(0xFF64D2B8)
 )
 
 val LocalSemanticColors = staticCompositionLocalOf { LightSemanticColors }

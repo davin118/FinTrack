@@ -18,7 +18,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DebtEntity::class,
         RecurringPlanEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class FinTrackDatabase : RoomDatabase() {
@@ -160,6 +160,23 @@ abstract class FinTrackDatabase : RoomDatabase() {
                 )
             }
         }
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''"
+                )
+                db.execSQL(
+                    "ALTER TABLE users ADD COLUMN passwordHash TEXT NOT NULL DEFAULT ''"
+                )
+                db.execSQL(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS index_users_email_not_empty
+                    ON users(email)
+                    WHERE email <> ''
+                    """.trimIndent()
+                )
+            }
+        }
 
         @Volatile
         private var INSTANCE: FinTrackDatabase? = null
@@ -181,7 +198,8 @@ abstract class FinTrackDatabase : RoomDatabase() {
                         MIGRATION_7_8,
                         MIGRATION_8_9,
                         MIGRATION_9_10,
-                        MIGRATION_10_11
+                        MIGRATION_10_11,
+                        MIGRATION_11_12
                     )
                     .build()
                     .also { INSTANCE = it }

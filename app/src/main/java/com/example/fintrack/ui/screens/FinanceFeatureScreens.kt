@@ -7,9 +7,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Row
@@ -51,12 +53,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
@@ -75,12 +80,15 @@ import com.example.fintrack.ui.theme.AppSuccess
 import com.example.fintrack.ui.theme.AppWarning
 import com.example.fintrack.ui.theme.semanticColors
 import com.example.fintrack.ui.finance.CategoryExpenseShare
+import com.example.fintrack.ui.finance.BudgetProgress
+import com.example.fintrack.ui.finance.ExpenseTrendPoint
 import com.example.fintrack.ui.finance.FinanceTransaction
 import com.example.fintrack.ui.finance.FinanceUiState
 import com.example.fintrack.ui.finance.TransactionCategory
 import com.example.fintrack.ui.finance.TransactionType
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -98,6 +106,15 @@ fun SummaryScreen(
 ) {
     val recentTransactions = uiState.summaryTransactions.take(5)
     val username = uiState.currentUser?.name?.ifBlank { "Usuario" } ?: "Usuario"
+    var flowMonths by remember { mutableStateOf(6) }
+    var flowAccountId by remember { mutableStateOf<Long?>(null) }
+    val monthlyNetFlow = remember(uiState.transactions, flowMonths, flowAccountId) {
+        buildMonthlyNetFlow(
+            transactions = uiState.transactions,
+            months = flowMonths,
+            accountId = flowAccountId
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -124,6 +141,44 @@ fun SummaryScreen(
                 accounts = uiState.accountBalances,
                 formatCurrency = ::formatCurrency
             )
+        }
+        item {
+            FinanceCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Flujo neto", style = MaterialTheme.typography.titleMedium)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(listOf(3, 6, 12)) { months ->
+                            FilterChip(
+                                selected = flowMonths == months,
+                                onClick = { flowMonths = months },
+                                label = { Text("${months}M") }
+                            )
+                        }
+                        item {
+                            FilterChip(
+                                selected = flowAccountId == null,
+                                onClick = { flowAccountId = null },
+                                label = { Text("Todas") }
+                            )
+                        }
+                        items(uiState.accounts, key = { it.id }) { account ->
+                            FilterChip(
+                                selected = flowAccountId == account.id,
+                                onClick = { flowAccountId = account.id },
+                                label = { Text(account.name) }
+                            )
+                        }
+                    }
+                    TrendLineChart(
+                        points = monthlyNetFlow.map { it.amount },
+                        lineColor = chartBlue,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp)
+                    )
+                    TrendLabelsRow(labels = monthlyNetFlow.map { it.label })
+                }
+            }
         }
         item {
             SectionHeader(
@@ -500,16 +555,32 @@ fun BudgetsScreen(
                 } else {
                     ExpenseDonutChart(
                         modifier = Modifier
-                            .size(180.dp)
+                            .size(170.dp)
                             .semantics { contentDescription = "Grafico de distribucion de gastos por categoria" }
                             .align(androidx.compose.ui.Alignment.CenterHorizontally),
                         shares = uiState.expenseShares
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         uiState.expenseShares.forEachIndexed { index, share ->
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("${share.category.label} (${(share.ratio * 100).toInt()}%)", color = donutColor(index))
-                                Text(formatCurrency(share.amount))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(donutColor(index).copy(alpha = 0.14f))
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                                ) {
+                                    Canvas(modifier = Modifier.size(8.dp)) {
+                                        drawCircle(color = donutColor(index))
+                                    }
+                                    Text("${share.category.label} (${(share.ratio * 100).toInt()}%)", color = MaterialTheme.colorScheme.onSurface)
+                                }
+                                Text(formatCurrency(share.amount), fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -519,31 +590,8 @@ fun BudgetsScreen(
 
         FinanceCard(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Tendencia de gastos (8 semanas)", style = MaterialTheme.typography.titleMedium)
-                TrendLineChart(
-                    points = uiState.weeklyExpenseTrend.map { it.amount },
-                    lineColor = MaterialTheme.semanticColors.info,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .semantics { contentDescription = "Grafico de tendencia semanal de gastos" }
-                        .height(140.dp)
-                )
-                TrendLabelsRow(labels = uiState.weeklyExpenseTrend.map { it.label.take(6) })
-            }
-        }
-
-        FinanceCard(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Tendencia de gastos (6 meses)", style = MaterialTheme.typography.titleMedium)
-                TrendLineChart(
-                    points = uiState.monthlyExpenseTrend.map { it.amount },
-                    lineColor = MaterialTheme.semanticColors.success,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .semantics { contentDescription = "Grafico de tendencia mensual de gastos" }
-                        .height(140.dp)
-                )
-                TrendLabelsRow(labels = uiState.monthlyExpenseTrend.map { it.label.split(" ").firstOrNull() ?: it.label })
+                Text("Presupuesto vs Gastado", style = MaterialTheme.typography.titleMedium)
+                BudgetVsActualChart(budgetProgress = uiState.budgetProgress)
             }
         }
 
@@ -744,10 +792,11 @@ fun ExpenseDonutChart(
     shares: List<CategoryExpenseShare>
 ) {
     Canvas(modifier = modifier) {
-        val strokeWidth = 34.dp.toPx()
+        val strokeWidth = 26.dp.toPx()
         var startAngle = -90f
         shares.forEachIndexed { index, share ->
-            val sweep = 360f * share.ratio
+            val gap = 1.8f
+            val sweep = (360f * share.ratio - gap).coerceAtLeast(0f)
             drawArc(
                 color = donutColor(index),
                 startAngle = startAngle,
@@ -755,9 +804,9 @@ fun ExpenseDonutChart(
                 useCenter = false,
                 topLeft = Offset(0f, 0f),
                 size = Size(size.width, size.height),
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Butt)
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             )
-            startAngle += sweep
+            startAngle += sweep + gap
         }
     }
 }
@@ -773,20 +822,48 @@ fun TrendLineChart(
 
         val max = points.maxOrNull()?.takeIf { it > 0.0 } ?: 1.0
         val stepX = size.width / (points.size - 1).coerceAtLeast(1)
+        val chartHeight = size.height
 
         val path = Path()
         points.forEachIndexed { index, value ->
             val x = stepX * index
-            val y = size.height - ((value / max).toFloat() * size.height)
+            val y = chartHeight - ((value / max).toFloat() * chartHeight)
             if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
 
+        // Grid horizontal sutil para facilitar lectura.
+        repeat(4) { idx ->
+            val y = chartHeight * (idx + 1) / 5f
+            drawLine(
+                color = lineColor.copy(alpha = 0.12f),
+                start = Offset(0f, y),
+                end = Offset(size.width, y),
+                strokeWidth = 1.5f
+            )
+        }
+
+        val areaPath = Path().apply {
+            addPath(path)
+            lineTo(size.width, chartHeight)
+            lineTo(0f, chartHeight)
+            close()
+        }
+        drawPath(
+            path = areaPath,
+            brush = Brush.verticalGradient(
+                colors = listOf(lineColor.copy(alpha = 0.24f), Color.Transparent),
+                startY = 0f,
+                endY = chartHeight
+            ),
+            style = Fill
+        )
         drawPath(path = path, color = lineColor, style = Stroke(width = 6f, cap = StrokeCap.Round))
 
         points.forEachIndexed { index, value ->
             val x = stepX * index
-            val y = size.height - ((value / max).toFloat() * size.height)
+            val y = chartHeight - ((value / max).toFloat() * chartHeight)
             drawCircle(color = lineColor, radius = 6f, center = Offset(x, y))
+            drawCircle(color = Color.White.copy(alpha = 0.92f), radius = 2.5f, center = Offset(x, y))
         }
     }
 }
@@ -802,6 +879,72 @@ fun TrendLabelsRow(labels: List<String>) {
     }
 }
 
+@Composable
+fun BudgetVsActualChart(
+    budgetProgress: List<BudgetProgress>,
+    modifier: Modifier = Modifier
+) {
+    if (budgetProgress.isEmpty()) {
+        Text("Sin categorías con presupuesto.", color = MaterialTheme.semanticColors.textSecondary)
+        return
+    }
+    val items = budgetProgress.take(6)
+    val maxValue = items.maxOf { maxOf(it.limitAmount, it.spentAmount) }.takeIf { it > 0.0 } ?: 1.0
+
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Canvas(modifier = Modifier.size(8.dp)) { drawCircle(color = chartBlue) }
+                Text("Límite", style = MaterialTheme.typography.labelMedium)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Canvas(modifier = Modifier.size(8.dp)) { drawCircle(color = chartRed) }
+                Text("Gastado", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+        items.forEach { item ->
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(item.category.label, style = MaterialTheme.typography.labelMedium)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(chartBlue.copy(alpha = 0.18f))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth((item.limitAmount / maxValue).toFloat().coerceIn(0f, 1f))
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(chartBlue)
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(chartRed.copy(alpha = 0.18f))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth((item.spentAmount / maxValue).toFloat().coerceIn(0f, 1f))
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(chartRed)
+                    )
+                }
+                Text(
+                    "Límite: ${formatCurrency(item.limitAmount)} · Gastado: ${formatCurrency(item.spentAmount)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.semanticColors.textSecondary
+                )
+            }
+        }
+    }
+}
+
 private fun formatCurrency(value: Double): String {
     return currencyFormatterNi.format(value).replace("NIO", "C$")
 }
@@ -810,21 +953,69 @@ private fun formatDate(epochMillis: Long): String {
     return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(epochMillis))
 }
 
+private fun buildMonthlyNetFlow(
+    transactions: List<FinanceTransaction>,
+    months: Int = 6,
+    accountId: Long? = null
+): List<ExpenseTrendPoint> {
+    val now = Calendar.getInstance()
+    val monthKeys = mutableListOf<String>()
+    repeat(months) { index ->
+        val month = (now.clone() as Calendar).apply {
+            add(Calendar.MONTH, -(months - 1 - index))
+            set(Calendar.DAY_OF_MONTH, 1)
+        }
+        monthKeys.add(SimpleDateFormat("yyyy-MM", Locale.US).format(month.time))
+    }
+
+    return monthKeys.map { key ->
+        val net = transactions
+            .filter {
+                toMonthKey(it.dateEpochMillis) == key &&
+                    !it.isTransfer &&
+                    (accountId == null || it.accountId == accountId)
+            }
+            .sumOf { tx -> if (tx.type == TransactionType.INCOME) tx.amount else -tx.amount }
+        ExpenseTrendPoint(
+            label = monthShortLabel(key),
+            amount = net
+        )
+    }
+}
+
+private fun monthShortLabel(key: String): String {
+    val localeEsNi = Locale.forLanguageTag("es-NI")
+    return runCatching {
+        val date = SimpleDateFormat("yyyy-MM", Locale.US).parse(key) ?: return@runCatching key
+        SimpleDateFormat("MMM", localeEsNi).format(date).replaceFirstChar {
+            if (it.isLowerCase()) it.titlecase(localeEsNi) else it.toString()
+        }
+    }.getOrElse { key }
+}
+
+private fun toMonthKey(epochMillis: Long): String {
+    return SimpleDateFormat("yyyy-MM", Locale.US).format(Date(epochMillis))
+}
+
 private fun donutColor(index: Int): Color {
     val palette = listOf(
-        Color(0xFF2A9D8F),
-        AppWarning,
-        Color(0xFFF4A261),
-        AppDanger,
-        AppInfo
+        Color(0xFF6FA8DC), // azul suave
+        Color(0xFF7ED6C1), // turquesa suave
+        Color(0xFFF4B183), // coral suave
+        Color(0xFFB4A7D6)  // lila suave
     )
     return palette[index % palette.size]
 }
 
 private fun budgetUsageColor(ratio: Float): Color {
     return when {
-        ratio < 0.8f -> AppSuccess
-        ratio <= 1f -> AppWarning
-        else -> AppDanger
+        ratio < 0.8f -> chartLightGreen
+        ratio <= 1f -> chartSky
+        else -> chartRed
     }
 }
+
+private val chartBlue = Color(0xFF2E5B88)
+private val chartRed = Color(0xFFE25151)
+private val chartLightGreen = Color(0xFF8FE388)
+private val chartSky = Color(0xFF48C9F0)
