@@ -1,0 +1,955 @@
+package com.example.fintrack.ui.finance
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.fintrack.data.backup.BackupCrypto
+import com.example.fintrack.data.backup.BackupPayload
+import com.example.fintrack.data.local.FinTrackDatabase
+import com.example.fintrack.data.repositories.AccountsRepository
+import com.example.fintrack.data.repositories.BackupRepository
+import com.example.fintrack.data.repositories.BudgetsRepository
+import com.example.fintrack.data.repositories.DebtsRepository
+import com.example.fintrack.data.repositories.ProfileRepository
+import com.example.fintrack.data.repositories.RecurringPlansRepository
+import com.example.fintrack.data.repositories.SavingGoalsRepository
+import com.example.fintrack.data.repositories.SubscriptionsRepository
+import com.example.fintrack.data.repositories.TransactionsRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+
+enum class TransactionType(val label: String) {
+    INCOME("Ingreso"),
+    EXPENSE("Gasto")
+}
+
+enum class TransactionCategory(val label: String) {
+    FOOD("Comida"),
+    TRANSPORT("Transporte"),
+    SERVICES("Servicios"),
+    SALARY("Salario"),
+    OTHER("Otros")
+}
+
+data class FinanceTransaction(
+    val id: Long,
+    val description: String,
+    val amount: Double,
+    val type: TransactionType,
+    val category: TransactionCategory,
+    val accountId: Long,
+    val isTransfer: Boolean,
+    val dateEpochMillis: Long
+)
+
+data class FinanceAccount(
+    val id: Long,
+    val name: String
+)
+
+data class FinanceUser(
+    val id: Long,
+    val name: String,
+    val avatarUri: String?
+)
+
+data class FinanceSubscription(
+    val id: Long,
+    val name: String,
+    val amount: Double,
+    val dayOfMonth: Int,
+    val isActive: Boolean
+)
+
+data class FinanceSavingGoal(
+    val id: Long,
+    val name: String,
+    val targetAmount: Double,
+    val savedAmount: Double,
+    val isActive: Boolean
+)
+
+data class FinanceDebt(
+    val id: Long,
+    val name: String,
+    val totalAmount: Double,
+    val paidAmount: Double,
+    val isActive: Boolean
+)
+
+data class AccountBalance(
+    val account: FinanceAccount,
+    val income: Double,
+    val expense: Double,
+    val balance: Double
+)
+
+data class BudgetProgress(
+    val category: TransactionCategory,
+    val limitAmount: Double,
+    val spentAmount: Double,
+    val remainingAmount: Double,
+    val progressRatio: Float,
+    val exceeded: Boolean
+)
+
+data class CategoryExpenseShare(
+    val category: TransactionCategory,
+    val amount: Double,
+    val ratio: Float
+)
+
+data class ExpenseTrendPoint(
+    val label: String,
+    val amount: Double
+)
+
+enum class ReminderSeverity {
+    INFO,
+    WARNING,
+    CRITICAL
+}
+
+enum class RecurringTargetType(val dbValue: String, val label: String) {
+    SAVING_GOAL("SAVING_GOAL", "Meta"),
+    DEBT("DEBT", "Deuda");
+
+    companion object {
+        fun fromDb(value: String): RecurringTargetType? = entries.firstOrNull { it.dbValue == value }
+    }
+}
+
+data class SmartReminder(
+    val id: String,
+    val message: String,
+    val severity: ReminderSeverity
+)
+
+data class FinanceRecurringPlan(
+    val id: Long,
+    val targetType: RecurringTargetType,
+    val targetId: Long,
+    val targetName: String,
+    val amount: Double,
+    val dayOfMonth: Int,
+    val isActive: Boolean,
+    val lastAppliedMonth: String?
+)
+
+data class FinanceUiState(
+    val currentUser: FinanceUser? = null,
+    val shouldPromptUserCreation: Boolean = true,
+    val accounts: List<FinanceAccount> = emptyList(),
+    val accountBalances: List<AccountBalance> = emptyList(),
+    val accountNameById: Map<Long, String> = emptyMap(),
+    val subscriptions: List<FinanceSubscription> = emptyList(),
+    val activeSubscriptionsMonthlyTotal: Double = 0.0,
+    val savingGoals: List<FinanceSavingGoal> = emptyList(),
+    val activeSavingGoalsTargetTotal: Double = 0.0,
+    val activeSavingGoalsSavedTotal: Double = 0.0,
+    val debts: List<FinanceDebt> = emptyList(),
+    val activeDebtsTotalAmount: Double = 0.0,
+    val activeDebtsPendingAmount: Double = 0.0,
+    val recurringPlans: List<FinanceRecurringPlan> = emptyList(),
+    val recurringStatusMessage: String? = null,
+    val transactions: List<FinanceTransaction> = emptyList(),
+    val summaryTransactions: List<FinanceTransaction> = emptyList(),
+    val monthFilters: List<String> = emptyList(),
+    val selectedMonthFilter: String? = null,
+    val selectedAccountFilter: Long? = null,
+    val selectedTypeFilter: TransactionType? = null,
+    val selectedCategoryFilter: TransactionCategory? = null,
+    val searchQuery: String = "",
+    val income: Double = 0.0,
+    val expense: Double = 0.0,
+    val balance: Double = 0.0,
+    val budgetMonthKey: String = "",
+    val budgetProgress: List<BudgetProgress> = emptyList(),
+    val expenseShares: List<CategoryExpenseShare> = emptyList(),
+    val totalBudgetLimit: Double = 0.0,
+    val totalBudgetSpent: Double = 0.0,
+    val weeklyExpenseTrend: List<ExpenseTrendPoint> = emptyList(),
+    val monthlyExpenseTrend: List<ExpenseTrendPoint> = emptyList(),
+    val reminders: List<SmartReminder> = emptyList(),
+    val backupStatusMessage: String? = null,
+    val backupOperationRunning: Boolean = false
+)
+
+private data class FilterInputs(
+    val accounts: List<FinanceAccount>,
+    val transactions: List<FinanceTransaction>,
+    val monthFilter: String?,
+    val accountFilter: Long?,
+    val typeFilter: TransactionType?,
+    val categoryFilter: TransactionCategory?,
+    val query: String,
+    val backupStatus: String?,
+    val backupRunning: Boolean
+)
+
+private data class FilterTuple(
+    val month: String?,
+    val accountId: Long?,
+    val type: TransactionType?,
+    val category: TransactionCategory?
+)
+
+class FinanceViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val database = FinTrackDatabase.getInstance(application)
+    private val accountsRepository = AccountsRepository(database.accountDao())
+    private val transactionsRepository = TransactionsRepository(
+        database = database,
+        accountDao = database.accountDao(),
+        transactionDao = database.transactionDao(),
+        accountsRepository = accountsRepository
+    )
+    private val budgetsRepository = BudgetsRepository(database.budgetDao())
+    private val profileRepository = ProfileRepository(database.userDao())
+    private val subscriptionsRepository = SubscriptionsRepository(database.subscriptionDao())
+    private val savingGoalsRepository = SavingGoalsRepository(database.savingGoalDao())
+    private val debtsRepository = DebtsRepository(database.debtDao())
+    private val recurringPlansRepository = RecurringPlansRepository(database.recurringPlanDao())
+    private val backupRepository = BackupRepository(
+        database = database,
+        accountDao = database.accountDao(),
+        transactionDao = database.transactionDao(),
+        budgetDao = database.budgetDao(),
+        userDao = database.userDao(),
+        subscriptionDao = database.subscriptionDao(),
+        savingGoalDao = database.savingGoalDao(),
+        debtDao = database.debtDao(),
+        recurringPlanDao = database.recurringPlanDao()
+    )
+
+    private val selectedMonthFilter = MutableStateFlow<String?>(null)
+    private val selectedAccountFilter = MutableStateFlow<Long?>(null)
+    private val selectedTypeFilter = MutableStateFlow<TransactionType?>(null)
+    private val selectedCategoryFilter = MutableStateFlow<TransactionCategory?>(null)
+    private val searchQuery = MutableStateFlow("")
+    private val backupStatusMessage = MutableStateFlow<String?>(null)
+    private val backupOperationRunning = MutableStateFlow(false)
+    private val recurringStatusMessage = MutableStateFlow<String?>(null)
+
+    private val _uiState = MutableStateFlow(FinanceUiState())
+    val uiState: StateFlow<FinanceUiState> = _uiState.asStateFlow()
+    private val reminderPrefs = application.getSharedPreferences("smart_reminder_prefs", Application.MODE_PRIVATE)
+
+        init {
+        viewModelScope.launch {
+            transactionsRepository.seedSampleDataIfEmpty()
+        }
+        viewModelScope.launch {
+            applyRecurringPlansIfNeeded(force = false, manual = false)
+        }
+
+        viewModelScope.launch {
+            val filtersFlow = combine(
+                selectedMonthFilter,
+                selectedAccountFilter,
+                selectedTypeFilter,
+                selectedCategoryFilter
+            ) { monthFilter, accountFilter, typeFilter, categoryFilter ->
+                FilterTuple(
+                    month = monthFilter,
+                    accountId = accountFilter,
+                    type = typeFilter,
+                    category = categoryFilter
+                )
+            }
+            val backupFlow = combine(
+                searchQuery,
+                backupStatusMessage,
+                backupOperationRunning
+            ) { query, backupStatus, backupRunning ->
+                Triple(query, backupStatus, backupRunning)
+            }
+
+            combine(
+                accountsRepository.observeAccounts(),
+                transactionsRepository.observeTransactions(),
+                filtersFlow,
+                backupFlow
+            ) { accounts, transactions, filters, backup ->
+                FilterInputs(
+                    accounts = accounts,
+                    transactions = transactions,
+                    monthFilter = filters.month,
+                    accountFilter = filters.accountId,
+                    typeFilter = filters.type,
+                    categoryFilter = filters.category,
+                    query = backup.first,
+                    backupStatus = backup.second,
+                    backupRunning = backup.third
+                )
+            }.combine(budgetsRepository.observeBudgets()) { inputs, budgets ->
+                val accounts = inputs.accounts
+                val transactions = inputs.transactions
+                val monthFilter = inputs.monthFilter
+                val accountFilter = inputs.accountFilter
+                val typeFilter = inputs.typeFilter
+                val categoryFilter = inputs.categoryFilter
+                val query = inputs.query
+
+                val monthFilters = transactions
+                    .map { toMonthKey(it.dateEpochMillis) }
+                    .distinct()
+                    .sortedDescending()
+
+                val monthFiltered = transactions.filter { transaction ->
+                    monthFilter == null || toMonthKey(transaction.dateEpochMillis) == monthFilter
+                }
+
+                val accountFiltered = monthFiltered.filter { transaction ->
+                    accountFilter == null || transaction.accountId == accountFilter
+                }
+
+                val filtered = accountFiltered.filter { transaction ->
+                    val byType = typeFilter == null || transaction.type == typeFilter
+                    val byCategory = categoryFilter == null || transaction.category == categoryFilter
+                    val byQuery = query.isBlank() ||
+                        transaction.description.contains(query.trim(), ignoreCase = true)
+                    byType && byCategory && byQuery
+                }
+
+                val income = accountFiltered
+                    .filter { it.type == TransactionType.INCOME && !it.isTransfer }
+                    .sumOf { it.amount }
+                val expense = accountFiltered
+                    .filter { it.type == TransactionType.EXPENSE && !it.isTransfer }
+                    .sumOf { it.amount }
+
+                val budgetMonthKey = monthFilter ?: currentMonthKey()
+                val monthlyExpensesByCategory = transactions
+                    .filter {
+                        it.type == TransactionType.EXPENSE &&
+                            !it.isTransfer &&
+                            toMonthKey(it.dateEpochMillis) == budgetMonthKey
+                    }
+                    .groupBy { it.category }
+                    .mapValues { (_, txs) -> txs.sumOf { it.amount } }
+
+                val budgetProgress = TransactionCategory.entries
+                    .filter { it != TransactionCategory.SALARY }
+                    .map { category ->
+                        val limitAmount = budgets[category] ?: 0.0
+                        val spentAmount = monthlyExpensesByCategory[category] ?: 0.0
+                        val remainingAmount = limitAmount - spentAmount
+                        val exceeded = limitAmount > 0.0 && spentAmount > limitAmount
+                        val progressRatio = if (limitAmount > 0.0) {
+                            (spentAmount / limitAmount).coerceAtMost(1.5).toFloat()
+                        } else {
+                            0f
+                        }
+
+                        BudgetProgress(
+                            category = category,
+                            limitAmount = limitAmount,
+                            spentAmount = spentAmount,
+                            remainingAmount = remainingAmount,
+                            progressRatio = progressRatio,
+                            exceeded = exceeded
+                        )
+                    }
+
+                val totalBudgetLimit = budgetProgress.sumOf { it.limitAmount }
+                val totalBudgetSpent = budgetProgress.sumOf { it.spentAmount }
+                val totalExpensesForShares = monthlyExpensesByCategory.values.sum()
+                val expenseShares = monthlyExpensesByCategory
+                    .toList()
+                    .sortedByDescending { it.second }
+                    .map { (category, amount) ->
+                        CategoryExpenseShare(
+                            category = category,
+                            amount = amount,
+                            ratio = if (totalExpensesForShares > 0.0) {
+                                (amount / totalExpensesForShares).toFloat()
+                            } else {
+                                0f
+                            }
+                        )
+                    }
+
+                val weeklyExpenseTrend = buildWeeklyExpenseTrend(transactions)
+                val monthlyExpenseTrend = buildMonthlyExpenseTrend(transactions)
+                val accountNameById = accounts.associate { it.id to it.name }
+                val accountBalances = accounts.map { account ->
+                    val accountTx = transactions.filter { it.accountId == account.id }
+                    val accountIncome = accountTx.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+                    val accountExpense = accountTx.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+                    AccountBalance(
+                        account = account,
+                        income = accountIncome,
+                        expense = accountExpense,
+                        balance = accountIncome - accountExpense
+                    )
+                }
+
+                FinanceUiState(
+                    accounts = accounts,
+                    accountBalances = accountBalances,
+                    accountNameById = accountNameById,
+                    transactions = filtered,
+                    summaryTransactions = accountFiltered,
+                    monthFilters = monthFilters,
+                    selectedMonthFilter = monthFilter,
+                    selectedAccountFilter = accountFilter,
+                    selectedTypeFilter = typeFilter,
+                    selectedCategoryFilter = categoryFilter,
+                    searchQuery = query,
+                    income = income,
+                    expense = expense,
+                    balance = income - expense,
+                    budgetMonthKey = budgetMonthKey,
+                    budgetProgress = budgetProgress,
+                    expenseShares = expenseShares,
+                    totalBudgetLimit = totalBudgetLimit,
+                    totalBudgetSpent = totalBudgetSpent,
+                    weeklyExpenseTrend = weeklyExpenseTrend,
+                    monthlyExpenseTrend = monthlyExpenseTrend,
+                    backupStatusMessage = inputs.backupStatus,
+                    backupOperationRunning = inputs.backupRunning
+                )
+            }.combine(profileRepository.observeUser()) { nextState, user ->
+                nextState.copy(
+                    currentUser = user,
+                    shouldPromptUserCreation = user == null || user.name.isBlank()
+                )
+            }.combine(subscriptionsRepository.observeSubscriptions()) { stateWithUser, subscriptions ->
+                val reminders = buildSmartReminders(
+                    budgetProgress = stateWithUser.budgetProgress,
+                    subscriptions = subscriptions
+                )
+                stateWithUser.copy(
+                    subscriptions = subscriptions,
+                    activeSubscriptionsMonthlyTotal = subscriptions
+                        .filter { it.isActive }
+                        .sumOf { it.amount },
+                    reminders = reminders
+                )
+            }.combine(savingGoalsRepository.observeSavingGoals()) { stateWithReminders, goals ->
+                val activeGoals = goals.filter { it.isActive }
+                stateWithReminders.copy(
+                    savingGoals = goals,
+                    activeSavingGoalsTargetTotal = activeGoals.sumOf { it.targetAmount },
+                    activeSavingGoalsSavedTotal = activeGoals.sumOf { it.savedAmount }
+                )
+            }.combine(debtsRepository.observeDebts()) { stateWithGoals, debts ->
+                val activeDebts = debts.filter { it.isActive }
+                stateWithGoals.copy(
+                    debts = debts,
+                    activeDebtsTotalAmount = activeDebts.sumOf { it.totalAmount },
+                    activeDebtsPendingAmount = activeDebts.sumOf { (it.totalAmount - it.paidAmount).coerceAtLeast(0.0) }
+                )
+            }.combine(recurringPlansRepository.observeRecurringPlans()) { stateWithDebts, plans ->
+                val goalNames = stateWithDebts.savingGoals.associate { it.id to it.name }
+                val debtNames = stateWithDebts.debts.associate { it.id to it.name }
+                val mappedPlans = plans.mapNotNull { plan ->
+                    val type = RecurringTargetType.fromDb(plan.targetType) ?: return@mapNotNull null
+                    val targetName = when (type) {
+                        RecurringTargetType.SAVING_GOAL -> goalNames[plan.targetId]
+                        RecurringTargetType.DEBT -> debtNames[plan.targetId]
+                    } ?: "Objetivo eliminado"
+                    FinanceRecurringPlan(
+                        id = plan.id,
+                        targetType = type,
+                        targetId = plan.targetId,
+                        targetName = targetName,
+                        amount = plan.amount,
+                        dayOfMonth = plan.dayOfMonth,
+                        isActive = plan.isActive,
+                        lastAppliedMonth = plan.lastAppliedMonth
+                    )
+                }
+                stateWithDebts.copy(recurringPlans = mappedPlans)
+            }.combine(recurringStatusMessage) { stateWithPlans, recurringStatus ->
+                stateWithPlans.copy(recurringStatusMessage = recurringStatus)
+            }.collect { finalState: FinanceUiState ->
+                _uiState.value = finalState
+                maybeSendReminderNotification(finalState.reminders)
+            }
+        }
+    }
+
+    fun addTransaction(
+        description: String,
+        amount: Double,
+        type: TransactionType,
+        category: TransactionCategory,
+        accountId: Long
+    ) {
+        viewModelScope.launch {
+            transactionsRepository.addTransaction(
+                description = description,
+                amount = amount,
+                type = type,
+                category = category,
+                accountId = accountId,
+                dateEpochMillis = System.currentTimeMillis()
+            )
+        }
+    }
+
+    fun updateTransaction(
+        id: Long,
+        description: String,
+        amount: Double,
+        type: TransactionType,
+        category: TransactionCategory,
+        accountId: Long,
+        dateEpochMillis: Long
+    ) {
+        viewModelScope.launch {
+            transactionsRepository.updateTransaction(
+                id = id,
+                description = description,
+                amount = amount,
+                type = type,
+                category = category,
+                accountId = accountId,
+                dateEpochMillis = dateEpochMillis
+            )
+        }
+    }
+
+    fun deleteTransaction(id: Long) {
+        viewModelScope.launch {
+            transactionsRepository.deleteTransaction(id)
+        }
+    }
+
+    fun saveBudget(category: TransactionCategory, limitAmount: Double) {
+        viewModelScope.launch {
+            budgetsRepository.saveBudget(category = category, limitAmount = limitAmount)
+        }
+    }
+
+    fun addAccount(name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            runCatching { accountsRepository.addAccount(name.trim()) }
+        }
+    }
+
+    fun createOrUpdateUser(name: String, avatarUri: String?) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            runCatching { profileRepository.saveUser(name.trim(), avatarUri) }
+        }
+    }
+
+    fun transferBetweenAccounts(
+        fromAccountId: Long,
+        toAccountId: Long,
+        amount: Double,
+        note: String
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                transactionsRepository.transferBetweenAccounts(
+                    fromAccountId = fromAccountId,
+                    toAccountId = toAccountId,
+                    amount = amount,
+                    note = note
+                )
+            }
+        }
+    }
+
+    fun addSubscription(name: String, amount: Double, dayOfMonth: Int) {
+        viewModelScope.launch {
+            runCatching {
+                subscriptionsRepository.addSubscription(name, amount, dayOfMonth)
+            }
+        }
+    }
+
+    fun setSubscriptionActive(subscriptionId: Long, active: Boolean) {
+        viewModelScope.launch {
+            runCatching { subscriptionsRepository.setSubscriptionActive(subscriptionId, active) }
+        }
+    }
+
+    fun deleteSubscription(subscriptionId: Long) {
+        viewModelScope.launch {
+            runCatching { subscriptionsRepository.deleteSubscription(subscriptionId) }
+        }
+    }
+
+    fun addSavingGoal(name: String, targetAmount: Double) {
+        viewModelScope.launch {
+            runCatching { savingGoalsRepository.addSavingGoal(name, targetAmount) }
+        }
+    }
+
+    fun contributeToSavingGoal(goalId: Long, amount: Double) {
+        viewModelScope.launch {
+            runCatching { savingGoalsRepository.contributeToGoal(goalId, amount) }
+        }
+    }
+
+    fun deleteSavingGoal(goalId: Long) {
+        viewModelScope.launch {
+            runCatching { savingGoalsRepository.deleteSavingGoal(goalId) }
+        }
+    }
+
+    fun addDebt(name: String, totalAmount: Double) {
+        viewModelScope.launch {
+            runCatching { debtsRepository.addDebt(name, totalAmount) }
+        }
+    }
+
+    fun payDebt(debtId: Long, amount: Double) {
+        viewModelScope.launch {
+            runCatching { debtsRepository.payDebt(debtId, amount) }
+        }
+    }
+
+    fun deleteDebt(debtId: Long) {
+        viewModelScope.launch {
+            runCatching { debtsRepository.deleteDebt(debtId) }
+        }
+    }
+
+    fun addRecurringPlan(
+        targetType: RecurringTargetType,
+        targetId: Long,
+        amount: Double,
+        dayOfMonth: Int
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                recurringPlansRepository.addRecurringPlan(
+                    targetType = targetType.dbValue,
+                    targetId = targetId,
+                    amount = amount,
+                    dayOfMonth = dayOfMonth
+                )
+            }.onSuccess {
+                recurringStatusMessage.value = "Automatizacion guardada."
+            }.onFailure {
+                recurringStatusMessage.value = "No se pudo guardar automatizacion."
+            }
+        }
+    }
+
+    fun setRecurringPlanActive(planId: Long, active: Boolean) {
+        viewModelScope.launch {
+            runCatching {
+                recurringPlansRepository.setRecurringPlanActive(planId, active)
+            }
+        }
+    }
+
+    fun deleteRecurringPlan(planId: Long) {
+        viewModelScope.launch {
+            runCatching {
+                recurringPlansRepository.deleteRecurringPlan(planId)
+            }
+        }
+    }
+
+    fun applyRecurringPlansNow() {
+        viewModelScope.launch {
+            applyRecurringPlansIfNeeded(force = true, manual = true)
+        }
+    }
+
+    fun createEncryptedBackup(password: String) {
+        if (password.isBlank()) {
+            backupStatusMessage.value = "La contraseña no puede ir vacia."
+            return
+        }
+        viewModelScope.launch {
+            backupOperationRunning.value = true
+            backupStatusMessage.value = null
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val payload = backupRepository.exportBackupPayload()
+                    val json = payload.toJson().toString()
+                    val encrypted = BackupCrypto.encrypt(json.toByteArray(Charsets.UTF_8), password)
+                    val backupDir = File(getApplication<Application>().getExternalFilesDir(null), "backups")
+                    backupDir.mkdirs()
+                    val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                    val file = File(backupDir, "ortvyn_backup_$stamp.obk")
+                    file.writeBytes(encrypted)
+                    file.absolutePath
+                }
+            }
+            backupOperationRunning.value = false
+            backupStatusMessage.value = result.fold(
+                onSuccess = { "Backup cifrado creado en: $it" },
+                onFailure = { "No se pudo crear backup: ${it.message ?: "error"}" }
+            )
+        }
+    }
+
+    fun restoreEncryptedBackup(password: String) {
+        if (password.isBlank()) {
+            backupStatusMessage.value = "La contraseña no puede ir vacia."
+            return
+        }
+        viewModelScope.launch {
+            backupOperationRunning.value = true
+            backupStatusMessage.value = null
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val backupDir = File(getApplication<Application>().getExternalFilesDir(null), "backups")
+                    val latest = backupDir.listFiles()
+                        ?.filter { it.isFile && it.name.endsWith(".obk") }
+                        ?.maxByOrNull { it.lastModified() }
+                        ?: error("No se encontro ningun backup en ${backupDir.absolutePath}")
+
+                    val encrypted = latest.readBytes()
+                    val decrypted = BackupCrypto.decrypt(encrypted, password)
+                    val payload = BackupPayload.fromJson(String(decrypted, Charsets.UTF_8))
+                    backupRepository.importBackupPayload(payload)
+                    payload.transactions.size to payload.budgets.size
+                }
+            }
+            backupOperationRunning.value = false
+            backupStatusMessage.value = result.fold(
+                onSuccess = { (txCount, budgetCount) ->
+                    "Backup restaurado. Transacciones: $txCount, presupuestos: $budgetCount"
+                },
+                onFailure = { "No se pudo restaurar backup: ${it.message ?: "error"}" }
+            )
+        }
+    }
+
+    fun setMonthFilter(monthKey: String?) {
+        selectedMonthFilter.value = monthKey
+    }
+
+    fun setTypeFilter(type: TransactionType?) {
+        selectedTypeFilter.value = type
+    }
+
+    fun setAccountFilter(accountId: Long?) {
+        selectedAccountFilter.value = accountId
+    }
+
+    fun setCategoryFilter(category: TransactionCategory?) {
+        selectedCategoryFilter.value = category
+    }
+
+    fun setSearchQuery(query: String) {
+        searchQuery.value = query
+    }
+
+    fun monthLabel(monthKey: String): String {
+        return runCatching {
+            val parsedDate = SimpleDateFormat("yyyy-MM", Locale.US).parse(monthKey) ?: return monthKey
+            SimpleDateFormat("MMM yyyy", Locale.US).format(parsedDate)
+        }.getOrDefault(monthKey)
+    }
+
+    private fun currentMonthKey(): String {
+        return toMonthKey(System.currentTimeMillis())
+    }
+
+    private suspend fun applyRecurringPlansIfNeeded(force: Boolean, manual: Boolean) {
+        val applied = runCatching {
+            recurringPlansRepository.applyDuePlans(
+                currentDayOfMonth = Calendar.getInstance().get(Calendar.DAY_OF_MONTH),
+                currentMonthKey = currentMonthKey(),
+                force = force,
+                onApplySavingGoal = { goalId, amount ->
+                    savingGoalsRepository.contributeToGoal(goalId, amount)
+                },
+                onApplyDebt = { debtId, amount ->
+                    debtsRepository.payDebt(debtId, amount)
+                }
+            )
+        }.getOrDefault(0)
+
+        if (manual) {
+            recurringStatusMessage.value = if (applied > 0) {
+                "Automatizaciones aplicadas: $applied"
+            } else {
+                "No hubo automatizaciones pendientes."
+            }
+        }
+    }
+
+    private fun buildWeeklyExpenseTrend(
+        transactions: List<FinanceTransaction>,
+        weeks: Int = 8
+    ): List<ExpenseTrendPoint> {
+        val now = Calendar.getInstance()
+        val weekStarts = mutableListOf<Calendar>()
+
+        repeat(weeks) { index ->
+            val week = (now.clone() as Calendar).apply {
+                firstDayOfWeek = Calendar.MONDAY
+                set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                add(Calendar.WEEK_OF_YEAR, -(weeks - 1 - index))
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            weekStarts.add(week)
+        }
+
+        return weekStarts.map { weekStart ->
+            val weekEnd = (weekStart.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 7) }
+            val amount = transactions
+                .filter {
+                    it.type == TransactionType.EXPENSE &&
+                        !it.isTransfer &&
+                        it.dateEpochMillis >= weekStart.timeInMillis &&
+                        it.dateEpochMillis < weekEnd.timeInMillis
+                }
+                .sumOf { it.amount }
+
+            ExpenseTrendPoint(
+                label = SimpleDateFormat("dd MMM", Locale.US).format(Date(weekStart.timeInMillis)),
+                amount = amount
+            )
+        }
+    }
+
+    private fun buildMonthlyExpenseTrend(
+        transactions: List<FinanceTransaction>,
+        months: Int = 6
+    ): List<ExpenseTrendPoint> {
+        val now = Calendar.getInstance()
+        val monthKeys = mutableListOf<String>()
+
+        repeat(months) { index ->
+            val month = (now.clone() as Calendar).apply {
+                add(Calendar.MONTH, -(months - 1 - index))
+                set(Calendar.DAY_OF_MONTH, 1)
+            }
+            monthKeys.add(SimpleDateFormat("yyyy-MM", Locale.US).format(month.time))
+        }
+
+        return monthKeys.map { key ->
+            val amount = transactions
+                .filter {
+                    it.type == TransactionType.EXPENSE &&
+                        !it.isTransfer &&
+                        toMonthKey(it.dateEpochMillis) == key
+                }
+                .sumOf { it.amount }
+
+            ExpenseTrendPoint(
+                label = monthLabel(key),
+                amount = amount
+            )
+        }
+    }
+
+    private fun toMonthKey(epochMillis: Long): String {
+        return SimpleDateFormat("yyyy-MM", Locale.US).format(Date(epochMillis))
+    }
+
+    private fun buildSmartReminders(
+        budgetProgress: List<BudgetProgress>,
+        subscriptions: List<FinanceSubscription>
+    ): List<SmartReminder> {
+        val reminders = mutableListOf<SmartReminder>()
+
+        budgetProgress.forEach { budget ->
+            if (budget.limitAmount <= 0.0) return@forEach
+            when {
+                budget.progressRatio >= 1f -> reminders.add(
+                    SmartReminder(
+                        id = "budget-${budget.category.name}-critical",
+                        message = "Presupuesto excedido en ${budget.category.label}.",
+                        severity = ReminderSeverity.CRITICAL
+                    )
+                )
+                budget.progressRatio >= 0.8f -> reminders.add(
+                    SmartReminder(
+                        id = "budget-${budget.category.name}-warning",
+                        message = "Estas por llegar al limite en ${budget.category.label}.",
+                        severity = ReminderSeverity.WARNING
+                    )
+                )
+            }
+        }
+
+        subscriptions.filter { it.isActive }.forEach { subscription ->
+            val days = daysUntilDayOfMonth(subscription.dayOfMonth)
+            if (days in 0..3) {
+                val whenText = when (days) {
+                    0 -> "hoy"
+                    1 -> "manana"
+                    else -> "en $days dias"
+                }
+                reminders.add(
+                    SmartReminder(
+                        id = "subscription-${subscription.id}-$days",
+                        message = "Suscripcion \"${subscription.name}\" se cobra $whenText.",
+                        severity = if (days == 0) ReminderSeverity.CRITICAL else ReminderSeverity.INFO
+                    )
+                )
+            }
+        }
+
+        return reminders
+    }
+
+    private fun daysUntilDayOfMonth(targetDay: Int): Int {
+        val now = Calendar.getInstance()
+        val today = now.get(Calendar.DAY_OF_MONTH)
+        val maxDayCurrent = now.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val safeCurrentTarget = targetDay.coerceAtMost(maxDayCurrent)
+
+        if (safeCurrentTarget >= today) {
+            return safeCurrentTarget - today
+        }
+
+        val next = (now.clone() as Calendar).apply {
+            add(Calendar.MONTH, 1)
+        }
+        val maxDayNext = next.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val safeNextTarget = targetDay.coerceAtMost(maxDayNext)
+        val remainingCurrent = maxDayCurrent - today
+        return remainingCurrent + safeNextTarget
+    }
+
+    private fun maybeSendReminderNotification(reminders: List<SmartReminder>) {
+        val highPriority = reminders.filter {
+            it.severity == ReminderSeverity.WARNING || it.severity == ReminderSeverity.CRITICAL
+        }
+        if (highPriority.isEmpty()) return
+
+        val signature = highPriority.joinToString("|") { it.id }
+        val now = System.currentTimeMillis()
+        val lastSignature = reminderPrefs.getString("last_signature", null)
+        val lastTime = reminderPrefs.getLong("last_time", 0L)
+
+        val sameAsLast = signature == lastSignature
+        val withinCooldown = (now - lastTime) < 6L * 60L * 60L * 1000L
+        if (sameAsLast && withinCooldown) return
+
+        val message = highPriority
+            .take(3)
+            .joinToString(separator = "\n") { "• ${it.message}" }
+
+        ReminderNotifier.notify(
+            context = getApplication(),
+            title = "Recordatorios de finanzas",
+            message = message
+        )
+
+        reminderPrefs.edit()
+            .putString("last_signature", signature)
+            .putLong("last_time", now)
+            .apply()
+    }
+}
