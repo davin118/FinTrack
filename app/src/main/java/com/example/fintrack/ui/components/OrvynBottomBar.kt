@@ -44,11 +44,11 @@ fun OrvynBottomBar(
 ) {
     Card(
         modifier = Modifier
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 14.dp),
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
         )
     ) {
         BoxWithConstraints {
@@ -63,15 +63,15 @@ fun OrvynBottomBar(
             Box(
                 modifier = Modifier
                     .offset(x = indicatorOffset)
-                    .width(itemWidth),
+                    .width(itemWidth)
             ) {
                 Box(
                     modifier = Modifier
-                        .height(56.dp)
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                        .height(60.dp)
+                        .padding(horizontal = 10.dp, vertical = 8.dp)
                         .width(itemWidth)
-                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+                        .background(Color(0xFFF2F4FF))
                 )
             }
 
@@ -90,8 +90,10 @@ fun OrvynBottomBar(
                         onClick = { onNavigate(destination.route) },
                         colors = NavigationBarItemDefaults.colors(
                             indicatorColor = Color.Transparent,
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary
+                            selectedIconColor = Color(0xFF2B3141),
+                            selectedTextColor = Color(0xFF2B3141),
+                            unselectedIconColor = Color(0xFF8E95A3),
+                            unselectedTextColor = Color(0xFF8E95A3)
                         ),
                         label = {
                             Text(
@@ -106,7 +108,7 @@ fun OrvynBottomBar(
                             Icon(
                                 imageVector = destination.icon,
                                 contentDescription = destination.label,
-                                modifier = Modifier.size((20 * iconScale).dp)
+                                modifier = Modifier.size((19 * iconScale).dp)
                             )
                         }
                     )

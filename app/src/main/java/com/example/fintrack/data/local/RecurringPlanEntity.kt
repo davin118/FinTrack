@@ -8,6 +8,7 @@ data class RecurringPlanEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val targetType: String,
     val targetId: Long,
+    val sourceAccountId: Long,
     val amount: Double,
     val dayOfMonth: Int,
     val isActive: Boolean = true,

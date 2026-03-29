@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -31,6 +32,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.CompareArrows
+import androidx.compose.material.icons.outlined.PieChartOutline
+import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -107,21 +112,25 @@ fun SummaryScreen(
 ) {
     val recentTransactions = uiState.summaryTransactions.take(5)
     val username = uiState.currentUser?.name?.ifBlank { "Usuario" } ?: "Usuario"
-    var flowMonths by remember { mutableStateOf(6) }
-    var flowAccountId by remember { mutableStateOf<Long?>(null) }
-    val monthlyNetFlow = remember(uiState.transactions, flowMonths, flowAccountId) {
-        buildMonthlyNetFlow(
-            transactions = uiState.transactions,
-            months = flowMonths,
-            accountId = flowAccountId
+    val incomeRatio = remember(uiState.income, uiState.expense) {
+        val total = uiState.income + uiState.expense
+        if (total <= 0.0) 0.55f else (uiState.income / total).toFloat().coerceIn(0.15f, 0.85f)
+    }
+    val expenseRatio = (1f - incomeRatio).coerceIn(0.15f, 0.85f)
+    val serviceActions = remember {
+        listOf(
+            DashboardServiceAction("Wallet", Icons.Outlined.AccountBalanceWallet, Color(0xFFB9F3D3)),
+            DashboardServiceAction("Transfer", Icons.Outlined.CompareArrows, Color(0xFFFFE4B8)),
+            DashboardServiceAction("Budget", Icons.Outlined.PieChartOutline, Color(0xFFE5D7FF)),
+            DashboardServiceAction("Goals", Icons.Outlined.Savings, Color(0xFFD7F1FF))
         )
     }
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
             HomeHeader(
@@ -137,53 +146,62 @@ fun SummaryScreen(
             )
         }
         item {
-            AccountKindBalancesCard(
-                balances = uiState.accountKindBalances,
-                formatCurrency = ::formatCurrency
-            )
-        }
-        item { Spacer(modifier = Modifier.height(8.dp)) }
-        item {
             AccountsCard(
                 accounts = uiState.accountBalances,
                 formatCurrency = ::formatCurrency
             )
         }
         item {
-            FinanceCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Flujo neto", style = MaterialTheme.typography.titleMedium)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(listOf(3, 6, 12)) { months ->
-                            FilterChip(
-                                selected = flowMonths == months,
-                                onClick = { flowMonths = months },
-                                label = { Text("${months}M") }
-                            )
-                        }
-                        item {
-                            FilterChip(
-                                selected = flowAccountId == null,
-                                onClick = { flowAccountId = null },
-                                label = { Text("Todas") }
-                            )
-                        }
-                        items(uiState.accounts, key = { it.id }) { account ->
-                            FilterChip(
-                                selected = flowAccountId == account.id,
-                                onClick = { flowAccountId = account.id },
-                                label = { Text(account.name) }
-                            )
+            FinanceCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    Text("Statistics", style = MaterialTheme.typography.titleMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        DashboardRingChart(
+                            primaryRatio = incomeRatio,
+                            secondaryRatio = expenseRatio,
+                            modifier = Modifier.size(132.dp)
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            DashboardStatRow("Income", formatCurrency(uiState.income), Color(0xFF4D7CFF))
+                            DashboardStatRow("Spent", formatCurrency(uiState.expense), Color(0xFFFFC247))
+                            DashboardStatRow("Available", formatCurrency(uiState.balance), Color(0xFF49546A))
                         }
                     }
-                    TrendLineChart(
-                        points = monthlyNetFlow.map { it.amount },
-                        lineColor = chartBlue,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
-                    )
-                    TrendLabelsRow(labels = monthlyNetFlow.map { it.label })
+                }
+            }
+        }
+        item {
+            FinanceCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp)) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        Text("Quick Access", style = MaterialTheme.typography.titleMedium)
+                        SecondaryIconButton(text = "Add", icon = Icons.Filled.Add, onClick = onAddClick)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        serviceActions.forEach { action ->
+                            DashboardServiceItem(action = action)
+                        }
+                    }
                 }
             }
         }
@@ -225,6 +243,102 @@ fun SummaryScreen(
                 )
             }
         }
+    }
+}
+
+private data class DashboardServiceAction(
+    val label: String,
+    val icon: ImageVector,
+    val tone: Color
+)
+
+@Composable
+private fun DashboardServiceItem(action: DashboardServiceAction) {
+    Column(
+        modifier = Modifier.width(72.dp),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(action.tone.copy(alpha = 0.42f)),
+            contentAlignment = androidx.compose.ui.Alignment.Center
+        ) {
+            Icon(
+                imageVector = action.icon,
+                contentDescription = action.label,
+                tint = Color(0xFF2B3141)
+            )
+        }
+        Text(
+            action.label,
+            style = MaterialTheme.typography.labelMedium,
+            color = Color(0xFF5C6475)
+        )
+    }
+}
+
+@Composable
+private fun DashboardRingChart(
+    primaryRatio: Float,
+    secondaryRatio: Float,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val strokeWidth = 24.dp.toPx()
+        val gap = 10f
+        val totalSweep = 360f - gap * 2
+        val primarySweep = totalSweep * primaryRatio
+        val secondarySweep = totalSweep * secondaryRatio
+        val tertiarySweep = (totalSweep - primarySweep - secondarySweep).coerceAtLeast(20f)
+
+        drawArc(
+            color = Color(0xFF4D7CFF),
+            startAngle = -90f,
+            sweepAngle = primarySweep,
+            useCenter = false,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        )
+        drawArc(
+            color = Color(0xFFFFC247),
+            startAngle = -90f + primarySweep + gap,
+            sweepAngle = secondarySweep,
+            useCenter = false,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        )
+        drawArc(
+            color = Color(0xFF49546A),
+            startAngle = -90f + primarySweep + secondarySweep + gap * 2,
+            sweepAngle = tertiarySweep,
+            useCenter = false,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        )
+    }
+}
+
+@Composable
+private fun DashboardStatRow(
+    label: String,
+    value: String,
+    tone: Color
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            Canvas(modifier = Modifier.size(9.dp)) {
+                drawCircle(color = tone)
+            }
+            Text(label, color = MaterialTheme.semanticColors.textSecondary)
+        }
+        Text(value, fontWeight = FontWeight.SemiBold, color = Color(0xFF252B3B))
     }
 }
 

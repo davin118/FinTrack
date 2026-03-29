@@ -43,9 +43,13 @@ class TransactionsRepository(
         isTransfer: Boolean = false,
         dateEpochMillis: Long
     ) {
+        val normalizedDescription = description.trim()
+        require(normalizedDescription.isNotEmpty()) { "La descripcion es obligatoria." }
+        require(amount > 0.0) { "El monto debe ser mayor a 0." }
+        require(accountDao.getById(accountId) != null) { "La cuenta seleccionada no existe." }
         transactionDao.insert(
             TransactionEntity(
-                description = description,
+                description = normalizedDescription,
                 amount = amount,
                 type = type.name,
                 category = category.name,
@@ -66,10 +70,14 @@ class TransactionsRepository(
         isTransfer: Boolean = false,
         dateEpochMillis: Long
     ) {
+        val normalizedDescription = description.trim()
+        require(normalizedDescription.isNotEmpty()) { "La descripcion es obligatoria." }
+        require(amount > 0.0) { "El monto debe ser mayor a 0." }
+        require(accountDao.getById(accountId) != null) { "La cuenta seleccionada no existe." }
         transactionDao.update(
             TransactionEntity(
                 id = id,
-                description = description,
+                description = normalizedDescription,
                 amount = amount,
                 type = type.name,
                 category = category.name,

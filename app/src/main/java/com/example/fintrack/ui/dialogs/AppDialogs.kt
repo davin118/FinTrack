@@ -467,9 +467,12 @@ fun CreateSavingGoalDialog(
 @Composable
 fun ContributeSavingGoalDialog(
     goalName: String,
+    accounts: List<FinanceAccount>,
     onDismiss: () -> Unit,
-    onConfirm: (Double) -> Unit
+    onConfirm: (Long, Double) -> Unit
 ) {
+    val defaultAccountId = accounts.firstOrNull()?.id ?: 0L
+    var accountId by remember(accounts) { mutableStateOf(defaultAccountId) }
     var amount by remember { mutableStateOf("") }
 
     AppPopupDialog(
@@ -479,6 +482,20 @@ fun ContributeSavingGoalDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(goalName)
+                Text("Cuenta origen")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(accounts, key = { it.id }) { account ->
+                        FilterChip(
+                            selected = accountId == account.id,
+                            onClick = { accountId = account.id },
+                            label = { Text(account.name) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
                 PopupInputField(
                     value = amount,
                     onValueChange = { amount = it },
@@ -491,10 +508,11 @@ fun ContributeSavingGoalDialog(
                 text = "Aportar",
                 onClick = {
                     val parsedAmount = amount.toDoubleOrNull()
-                    if (parsedAmount != null && parsedAmount > 0.0) {
-                        onConfirm(parsedAmount)
+                    if (parsedAmount != null && parsedAmount > 0.0 && accountId > 0L) {
+                        onConfirm(accountId, parsedAmount)
                     }
-                }
+                },
+                enabled = accounts.isNotEmpty()
             )
         },
         dismissButton = {
@@ -549,9 +567,12 @@ fun CreateDebtDialog(
 @Composable
 fun PayDebtDialog(
     debtName: String,
+    accounts: List<FinanceAccount>,
     onDismiss: () -> Unit,
-    onConfirm: (Double) -> Unit
+    onConfirm: (Long, Double) -> Unit
 ) {
+    val defaultAccountId = accounts.firstOrNull()?.id ?: 0L
+    var accountId by remember(accounts) { mutableStateOf(defaultAccountId) }
     var amount by remember { mutableStateOf("") }
 
     AppPopupDialog(
@@ -561,6 +582,20 @@ fun PayDebtDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(debtName)
+                Text("Cuenta origen")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(accounts, key = { it.id }) { account ->
+                        FilterChip(
+                            selected = accountId == account.id,
+                            onClick = { accountId = account.id },
+                            label = { Text(account.name) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
                 PopupInputField(
                     value = amount,
                     onValueChange = { amount = it },
@@ -573,10 +608,11 @@ fun PayDebtDialog(
                 text = "Abonar",
                 onClick = {
                     val parsedAmount = amount.toDoubleOrNull()
-                    if (parsedAmount != null && parsedAmount > 0.0) {
-                        onConfirm(parsedAmount)
+                    if (parsedAmount != null && parsedAmount > 0.0 && accountId > 0L) {
+                        onConfirm(accountId, parsedAmount)
                     }
-                }
+                },
+                enabled = accounts.isNotEmpty()
             )
         },
         dismissButton = {
@@ -587,14 +623,17 @@ fun PayDebtDialog(
 
 @Composable
 fun CreateRecurringPlanDialog(
+    accounts: List<FinanceAccount>,
     savingGoals: List<FinanceSavingGoal>,
     debts: List<FinanceDebt>,
     onDismiss: () -> Unit,
-    onConfirm: (RecurringTargetType, Long, Double, Int) -> Unit
+    onConfirm: (RecurringTargetType, Long, Long, Double, Int) -> Unit
 ) {
     var targetType by remember { mutableStateOf(RecurringTargetType.SAVING_GOAL) }
     var amount by remember { mutableStateOf("") }
     var dayOfMonth by remember { mutableStateOf("1") }
+    val defaultAccountId = accounts.firstOrNull()?.id ?: 0L
+    var sourceAccountId by remember(accounts) { mutableStateOf(defaultAccountId) }
     val options = if (targetType == RecurringTargetType.SAVING_GOAL) {
         savingGoals.map { it.id to it.name }
     } else {
@@ -651,6 +690,25 @@ fun CreateRecurringPlanDialog(
                     }
                 }
 
+                Text("Cuenta origen")
+                if (accounts.isEmpty()) {
+                    Text("No hay cuentas disponibles.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(accounts, key = { it.id }) { account ->
+                            FilterChip(
+                                selected = account.id == sourceAccountId,
+                                onClick = { sourceAccountId = account.id },
+                                label = { Text(account.name) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
+                }
+
                 PopupInputField(
                     value = amount,
                     onValueChange = { amount = it },
@@ -669,11 +727,11 @@ fun CreateRecurringPlanDialog(
                 onClick = {
                     val parsedAmount = amount.toDoubleOrNull()
                     val parsedDay = dayOfMonth.toIntOrNull()
-                    if (targetId > 0L && parsedAmount != null && parsedAmount > 0.0 && parsedDay != null) {
-                        onConfirm(targetType, targetId, parsedAmount, parsedDay.coerceIn(1, 31))
+                    if (targetId > 0L && sourceAccountId > 0L && parsedAmount != null && parsedAmount > 0.0 && parsedDay != null) {
+                        onConfirm(targetType, targetId, sourceAccountId, parsedAmount, parsedDay.coerceIn(1, 31))
                     }
                 },
-                enabled = options.isNotEmpty()
+                enabled = options.isNotEmpty() && accounts.isNotEmpty()
             )
         },
         dismissButton = {

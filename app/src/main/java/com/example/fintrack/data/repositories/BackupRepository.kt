@@ -76,7 +76,12 @@ class BackupRepository(
                 debtDao.insertAll(payload.debts)
             }
             if (payload.recurringPlans.isNotEmpty()) {
-                recurringPlanDao.insertAll(payload.recurringPlans)
+                val fallbackAccountId = accountDao.firstAccountId() ?: 1L
+                val existingIds = accountDao.getAll().map { it.id }.toSet()
+                val fixedPlans = payload.recurringPlans.map { plan ->
+                    if (existingIds.contains(plan.sourceAccountId)) plan else plan.copy(sourceAccountId = fallbackAccountId)
+                }
+                recurringPlanDao.insertAll(fixedPlans)
             }
             if (payload.budgets.isNotEmpty()) {
                 budgetDao.upsertAll(payload.budgets)

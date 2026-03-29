@@ -166,17 +166,17 @@ import com.example.fintrack.ui.theme.FinTrackTheme
 import kotlinx.coroutines.delay
 
 private val bottomDestinations = listOf(
-    BottomBarItemModel(route = "summary", label = "Resumen", icon = Icons.Filled.Wallet),
-    BottomBarItemModel(route = "transactions", label = "Movimientos", icon = Icons.AutoMirrored.Filled.ReceiptLong),
-    BottomBarItemModel(route = "budgets", label = "Presupuestos", icon = Icons.Filled.Savings),
-    BottomBarItemModel(route = "tools", label = "Herramientas", icon = Icons.Filled.Settings)
+    BottomBarItemModel(route = "summary", label = "Home", icon = Icons.Filled.Wallet),
+    BottomBarItemModel(route = "transactions", label = "Activity", icon = Icons.AutoMirrored.Filled.ReceiptLong),
+    BottomBarItemModel(route = "budgets", label = "Budget", icon = Icons.Filled.Savings),
+    BottomBarItemModel(route = "tools", label = "Profile", icon = Icons.Filled.Settings)
 )
 
 private val backgroundGradient = Brush.verticalGradient(
     colors = listOf(
-        Color(0xFFF5F7FF),
-        Color(0xFFE8F5FF),
-        Color(0xFFF9F5FF)
+        Color(0xFFF3F4FB),
+        Color(0xFFEEF1FA),
+        Color(0xFFF6F3FB)
     )
 )
 
@@ -189,9 +189,9 @@ private val routeOrder = mapOf(
 
 private val topBarColorByRoute = mapOf(
     "summary" to Color(0x66D7E8FF),
-    "transactions" to Color(0x66CFE1FF),
-    "budgets" to Color(0x66D9F0E5),
-    "tools" to Color(0x66D7E8FF)
+    "transactions" to Color(0x66E3E7F7),
+    "budgets" to Color(0x66EFE6F6),
+    "tools" to Color(0x66EAEAF5)
 )
 
 private val topBarDarkColorByRoute = mapOf(
@@ -203,9 +203,9 @@ private val topBarDarkColorByRoute = mapOf(
 
 private val backgroundStartColorByRoute = mapOf(
     "summary" to Color(0xFFF5F7FF),
-    "transactions" to Color(0xFFF2F8FF),
-    "budgets" to Color(0xFFF4FBF8),
-    "tools" to Color(0xFFF5F7FF)
+    "transactions" to Color(0xFFF3F4FB),
+    "budgets" to Color(0xFFF5F2FB),
+    "tools" to Color(0xFFF4F4FB)
 )
 private val backgroundStartDarkColorByRoute = mapOf(
     "summary" to Color(0xFF0A1018),
@@ -216,9 +216,9 @@ private val backgroundStartDarkColorByRoute = mapOf(
 
 private val backgroundMidColorByRoute = mapOf(
     "summary" to Color(0xFFE8F5FF),
-    "transactions" to Color(0xFFE6F1FF),
-    "budgets" to Color(0xFFE6F6EF),
-    "tools" to Color(0xFFE8F5FF)
+    "transactions" to Color(0xFFEDEFF8),
+    "budgets" to Color(0xFFF0EAF7),
+    "tools" to Color(0xFFEEF0F8)
 )
 private val backgroundMidDarkColorByRoute = mapOf(
     "summary" to Color(0xFF0E1B2A),
@@ -229,9 +229,9 @@ private val backgroundMidDarkColorByRoute = mapOf(
 
 private val backgroundEndColorByRoute = mapOf(
     "summary" to Color(0xFFF9F5FF),
-    "transactions" to Color(0xFFF4F6FF),
-    "budgets" to Color(0xFFF2FBF6),
-    "tools" to Color(0xFFF9F5FF)
+    "transactions" to Color(0xFFF8F7FC),
+    "budgets" to Color(0xFFF9F5FB),
+    "tools" to Color(0xFFF7F6FC)
 )
 private val backgroundEndDarkColorByRoute = mapOf(
     "summary" to Color(0xFF0D1623),
@@ -910,9 +910,10 @@ private fun FinanceApp(
             if (selectedGoal != null) {
                 ContributeSavingGoalDialog(
                     goalName = selectedGoal.name,
+                    accounts = uiState.accounts,
                     onDismiss = { selectedSavingGoalIdForContribution = null },
-                    onConfirm = { amount ->
-                        financeViewModel.contributeToSavingGoal(goalId, amount)
+                    onConfirm = { accountId, amount ->
+                        financeViewModel.contributeToSavingGoal(goalId, accountId, amount)
                         selectedSavingGoalIdForContribution = null
                     }
                 )
@@ -938,9 +939,10 @@ private fun FinanceApp(
             if (selectedDebt != null) {
                 PayDebtDialog(
                     debtName = selectedDebt.name,
+                    accounts = uiState.accounts,
                     onDismiss = { selectedDebtIdForPayment = null },
-                    onConfirm = { amount ->
-                        financeViewModel.payDebt(debtId, amount)
+                    onConfirm = { accountId, amount ->
+                        financeViewModel.payDebt(debtId, accountId, amount)
                         selectedDebtIdForPayment = null
                     }
                 )
@@ -952,13 +954,15 @@ private fun FinanceApp(
 
     AnimatedDialogHost(visible = showCreateRecurringPlanDialog) {
         CreateRecurringPlanDialog(
+            accounts = uiState.accounts,
             savingGoals = uiState.savingGoals,
             debts = uiState.debts,
             onDismiss = { showCreateRecurringPlanDialog = false },
-            onConfirm = { targetType, targetId, amount, dayOfMonth ->
+            onConfirm = { targetType, targetId, sourceAccountId, amount, dayOfMonth ->
                 financeViewModel.addRecurringPlan(
                     targetType = targetType,
                     targetId = targetId,
+                    sourceAccountId = sourceAccountId,
                     amount = amount,
                     dayOfMonth = dayOfMonth
                 )

@@ -1,9 +1,12 @@
 package com.example.fintrack.data.repositories
 
+import androidx.room.withTransaction
+import com.example.fintrack.data.local.FinTrackDatabase
 import com.example.fintrack.data.local.RecurringPlanDao
 import com.example.fintrack.data.local.RecurringPlanEntity
 
 class RecurringPlansRepository(
+    private val database: FinTrackDatabase,
     private val recurringPlanDao: RecurringPlanDao
 ) {
     fun observeRecurringPlans() = recurringPlanDao.observeAll()
@@ -11,16 +14,19 @@ class RecurringPlansRepository(
     suspend fun addRecurringPlan(
         targetType: String,
         targetId: Long,
+        sourceAccountId: Long,
         amount: Double,
         dayOfMonth: Int
     ) {
         require(targetType.isNotBlank()) { "Tipo invalido" }
         require(targetId > 0L) { "Objetivo invalido" }
+        require(sourceAccountId > 0L) { "Cuenta origen invalida" }
         require(amount > 0.0) { "Monto invalido" }
         recurringPlanDao.insert(
             RecurringPlanEntity(
                 targetType = targetType,
                 targetId = targetId,
+                sourceAccountId = sourceAccountId,
                 amount = amount,
                 dayOfMonth = dayOfMonth.coerceIn(1, 31),
                 isActive = true,
@@ -43,8 +49,8 @@ class RecurringPlansRepository(
         currentDayOfMonth: Int,
         currentMonthKey: String,
         force: Boolean,
-        onApplySavingGoal: suspend (goalId: Long, amount: Double) -> Unit,
-        onApplyDebt: suspend (debtId: Long, amount: Double) -> Unit
+        onApplySavingGoal: suspend (goalId: Long, sourceAccountId: Long, amount: Double) -> Unit,
+        onApplyDebt: suspend (debtId: Long, sourceAccountId: Long, amount: Double) -> Unit
     ): Int {
         val plans = recurringPlanDao.getAll()
         var appliedCount = 0
@@ -55,13 +61,15 @@ class RecurringPlansRepository(
                 )
             if (!due) return@forEach
 
-            when (plan.targetType) {
-                "SAVING_GOAL" -> onApplySavingGoal(plan.targetId, plan.amount)
-                "DEBT" -> onApplyDebt(plan.targetId, plan.amount)
-                else -> return@forEach
-            }
+            database.withTransaction {
+                when (plan.targetType) {
+                    "SAVING_GOAL" -> onApplySavingGoal(plan.targetId, plan.sourceAccountId, plan.amount)
+                    "DEBT" -> onApplyDebt(plan.targetId, plan.sourceAccountId, plan.amount)
+                    else -> return@withTransaction
+                }
 
-            recurringPlanDao.update(plan.copy(lastAppliedMonth = currentMonthKey))
+                recurringPlanDao.update(plan.copy(lastAppliedMonth = currentMonthKey))
+            }
             appliedCount += 1
         }
         return appliedCount

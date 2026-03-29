@@ -581,6 +581,10 @@ private fun RecurringPlanRow(
                     "${formatCurrency(plan.amount)} cada dia ${plan.dayOfMonth}",
                     color = MaterialTheme.semanticColors.textSecondary
                 )
+                Text(
+                    "Cuenta origen: ${plan.sourceAccountName}",
+                    color = MaterialTheme.semanticColors.textSecondary
+                )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(

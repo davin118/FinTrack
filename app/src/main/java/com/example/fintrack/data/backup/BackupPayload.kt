@@ -110,6 +110,7 @@ data class BackupPayload(
                     .put("id", plan.id)
                     .put("targetType", plan.targetType)
                     .put("targetId", plan.targetId)
+                    .put("sourceAccountId", plan.sourceAccountId)
                     .put("amount", plan.amount)
                     .put("dayOfMonth", plan.dayOfMonth)
                     .put("isActive", plan.isActive)
@@ -254,6 +255,7 @@ data class BackupPayload(
                             id = obj.optLong("id"),
                             targetType = obj.optString("targetType", ""),
                             targetId = obj.optLong("targetId", 0L),
+                            sourceAccountId = obj.optLong("sourceAccountId", 1L),
                             amount = obj.optDouble("amount"),
                             dayOfMonth = obj.optInt("dayOfMonth", 1).coerceIn(1, 31),
                             isActive = obj.optBoolean("isActive", true),

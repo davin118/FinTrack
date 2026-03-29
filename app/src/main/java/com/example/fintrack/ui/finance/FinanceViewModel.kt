@@ -1,6 +1,7 @@
 package com.example.fintrack.ui.finance
 
 import android.app.Application
+import androidx.room.withTransaction
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.fintrack.data.backup.BackupCrypto
@@ -166,6 +167,8 @@ data class FinanceRecurringPlan(
     val targetType: RecurringTargetType,
     val targetId: Long,
     val targetName: String,
+    val sourceAccountId: Long,
+    val sourceAccountName: String,
     val amount: Double,
     val dayOfMonth: Int,
     val isActive: Boolean,
@@ -260,7 +263,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val subscriptionsRepository = SubscriptionsRepository(database.subscriptionDao())
     private val savingGoalsRepository = SavingGoalsRepository(database.savingGoalDao())
     private val debtsRepository = DebtsRepository(database.debtDao())
-    private val recurringPlansRepository = RecurringPlansRepository(database.recurringPlanDao())
+    private val recurringPlansRepository = RecurringPlansRepository(
+        database = database,
+        recurringPlanDao = database.recurringPlanDao()
+    )
     private val backupRepository = BackupRepository(
         database = database,
         accountDao = database.accountDao(),
@@ -530,17 +536,21 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 }.combine(recurringPlansRepository.observeRecurringPlans()) { stateWithDebts, plans ->
                     val goalNames = stateWithDebts.savingGoals.associate { it.id to it.name }
                     val debtNames = stateWithDebts.debts.associate { it.id to it.name }
+                    val accountNames = stateWithDebts.accounts.associate { it.id to it.name }
                     val mappedPlans = plans.mapNotNull { plan ->
                         val type = RecurringTargetType.fromDb(plan.targetType) ?: return@mapNotNull null
                         val targetName = when (type) {
                             RecurringTargetType.SAVING_GOAL -> goalNames[plan.targetId]
                             RecurringTargetType.DEBT -> debtNames[plan.targetId]
                         } ?: "Objetivo eliminado"
+                        val sourceAccountName = accountNames[plan.sourceAccountId] ?: "Cuenta eliminada"
                         FinanceRecurringPlan(
                             id = plan.id,
                             targetType = type,
                             targetId = plan.targetId,
                             targetName = targetName,
+                            sourceAccountId = plan.sourceAccountId,
+                            sourceAccountName = sourceAccountName,
                             amount = plan.amount,
                             dayOfMonth = plan.dayOfMonth,
                             isActive = plan.isActive,
@@ -921,9 +931,29 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun contributeToSavingGoal(goalId: Long, amount: Double) {
+    fun contributeToSavingGoal(goalId: Long, accountId: Long, amount: Double) {
+        if (amount <= 0.0) {
+            recurringStatusMessage.value = "El monto debe ser mayor a 0."
+            return
+        }
         viewModelScope.launch {
-            runCatching { savingGoalsRepository.contributeToGoal(goalId, amount) }
+            runCatching {
+                database.withTransaction {
+                    transactionsRepository.addTransaction(
+                        description = "Aporte a meta",
+                        amount = amount,
+                        type = TransactionType.EXPENSE,
+                        category = TransactionCategory.OTHER,
+                        accountId = accountId,
+                        dateEpochMillis = System.currentTimeMillis()
+                    )
+                    savingGoalsRepository.contributeToGoal(goalId, amount)
+                }
+            }.onSuccess {
+                recurringStatusMessage.value = "Aporte registrado correctamente."
+            }.onFailure {
+                recurringStatusMessage.value = it.message ?: "No se pudo registrar el aporte."
+            }
         }
     }
 
@@ -939,9 +969,29 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun payDebt(debtId: Long, amount: Double) {
+    fun payDebt(debtId: Long, accountId: Long, amount: Double) {
+        if (amount <= 0.0) {
+            recurringStatusMessage.value = "El monto debe ser mayor a 0."
+            return
+        }
         viewModelScope.launch {
-            runCatching { debtsRepository.payDebt(debtId, amount) }
+            runCatching {
+                database.withTransaction {
+                    transactionsRepository.addTransaction(
+                        description = "Pago de deuda",
+                        amount = amount,
+                        type = TransactionType.EXPENSE,
+                        category = TransactionCategory.OTHER,
+                        accountId = accountId,
+                        dateEpochMillis = System.currentTimeMillis()
+                    )
+                    debtsRepository.payDebt(debtId, amount)
+                }
+            }.onSuccess {
+                recurringStatusMessage.value = "Pago registrado correctamente."
+            }.onFailure {
+                recurringStatusMessage.value = it.message ?: "No se pudo registrar el pago."
+            }
         }
     }
 
@@ -954,6 +1004,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun addRecurringPlan(
         targetType: RecurringTargetType,
         targetId: Long,
+        sourceAccountId: Long,
         amount: Double,
         dayOfMonth: Int
     ) {
@@ -962,6 +1013,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 recurringPlansRepository.addRecurringPlan(
                     targetType = targetType.dbValue,
                     targetId = targetId,
+                    sourceAccountId = sourceAccountId,
                     amount = amount,
                     dayOfMonth = dayOfMonth
                 )
@@ -1094,10 +1146,26 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 currentDayOfMonth = Calendar.getInstance().get(Calendar.DAY_OF_MONTH),
                 currentMonthKey = currentMonthKey(),
                 force = force,
-                onApplySavingGoal = { goalId, amount ->
+                onApplySavingGoal = { goalId, sourceAccountId, amount ->
+                    transactionsRepository.addTransaction(
+                        description = "Aporte automatico a meta",
+                        amount = amount,
+                        type = TransactionType.EXPENSE,
+                        category = TransactionCategory.OTHER,
+                        accountId = sourceAccountId,
+                        dateEpochMillis = System.currentTimeMillis()
+                    )
                     savingGoalsRepository.contributeToGoal(goalId, amount)
                 },
-                onApplyDebt = { debtId, amount ->
+                onApplyDebt = { debtId, sourceAccountId, amount ->
+                    transactionsRepository.addTransaction(
+                        description = "Pago automatico de deuda",
+                        amount = amount,
+                        type = TransactionType.EXPENSE,
+                        category = TransactionCategory.OTHER,
+                        accountId = sourceAccountId,
+                        dateEpochMillis = System.currentTimeMillis()
+                    )
                     debtsRepository.payDebt(debtId, amount)
                 }
             )

@@ -1,14 +1,16 @@
 package com.example.fintrack.ui.components
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.AttachMoney
@@ -30,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,15 +55,19 @@ fun TransactionCard(
     val amountTone = if (transaction.type == TransactionType.INCOME) {
         MaterialTheme.semanticColors.success
     } else {
-        MaterialTheme.semanticColors.danger
+        Color(0xFFEA7D79)
     }
-    val categoryTone = if (transaction.type == TransactionType.INCOME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+    val categoryTone = if (transaction.type == TransactionType.INCOME) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.secondary
+    }
 
-    AppCard(modifier = Modifier.fillMaxWidth()) {
+    AppCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(horizontal = 14.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {
@@ -72,11 +79,10 @@ fun TransactionCard(
                 Box(
                     modifier = Modifier
                         .size(42.dp)
-                        .clip(CircleShape)
-                        .padding(0.dp),
+                        .clip(CircleShape),
                     contentAlignment = androidx.compose.ui.Alignment.Center
                 ) {
-                    androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
                         drawCircle(color = categoryTone.copy(alpha = 0.14f))
                     }
                     Icon(
@@ -92,19 +98,14 @@ fun TransactionCard(
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.semanticColors.textSecondary
                     )
-                    Text(
-                        accountName,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.semanticColors.textSecondary
-                    )
                 }
             }
             Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
                 Text(amountText, color = amountTone, fontWeight = FontWeight.Bold)
                 Text(
-                    if (transaction.type == TransactionType.INCOME) "Ingreso" else "Gasto",
+                    accountName,
                     style = MaterialTheme.typography.labelSmall,
-                    color = amountTone.copy(alpha = 0.85f)
+                    color = MaterialTheme.semanticColors.textSecondary
                 )
                 IconButton(onClick = { menuOpen = true }) {
                     Icon(Icons.Filled.MoreVert, contentDescription = "Opciones de transaccion")
